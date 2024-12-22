@@ -1,0 +1,42 @@
+[project]
+name = "dogpile_breaker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Dmitry P.", email = "wwarne@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "async-timeout>=5.0.1 ; python_full_version < '3.11'",
+    "redis>=5.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13.0",
+    "ruff>=0.8.3",
+]
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D", # no-blank-line-before-class
+    "COM812",
+    "ISC001",
+    "PLR0913", #  Too many arguments in function definition
+    "FIX002",
+    "TD003",
+    "TD002",
+    "ANN401",
+    "T201",
+]
