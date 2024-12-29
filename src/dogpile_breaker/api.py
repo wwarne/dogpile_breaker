@@ -6,7 +6,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar
+from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
 from typing_extensions import Self
 
@@ -57,6 +57,16 @@ class StorageBackend(Protocol):
 
     async def unlock(self, key: str) -> None:
         """Releases lock."""
+
+
+class CachedFuncWithMethods(Protocol[P, R]):
+    async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+    async def call_without_cache(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
+    async def save_to_cache(self, _result: R, *args: P.args, **kwargs: P.kwargs) -> None: ...
+
+
+class CachingDecorator(Protocol):
+    def __call__(self, func: Callable[P, Awaitable[R]]) -> CachedFuncWithMethods[P, R]: ...
 
 
 @dataclass
@@ -431,7 +441,7 @@ class CacheRegion:
         function_key_generator: KeyGeneratorFunc,
         should_cache_fn: ShouldCacheFunc | None = None,
         jitter_func: JitterFunc | None = full_jitter,
-    ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+    ) -> CachingDecorator:
         """
         A function decorator that will cache the return
         value of the function using a key derived from the
@@ -442,23 +452,23 @@ class CacheRegion:
         cache and conditionally call the function.  See that
         method for additional behavioral details.
 
-        The function is also given an attribute `original` containing non-cached version of a function.
+        The function is also given an attribute `call_without_cached` containing non-cached version of a function.
         So in case you want to call function directly
 
-          generate_something.original(3,4)
+          await generate_something.call_without_cached(3,4)
 
          equivalent to calling ``generate_something(3, 4)`` without using cache at all.
 
 
         Another attribute ``save_to_cache()`` is added to provide extra caching
         possibilities relative to the function.   This is a convenience
-        method for :meth:`.CacheRegion.set` which will store a given
+        method which will store a given
         value directly without calling the decorated function.
         The value to be cached is passed as the first argument, and the
         arguments which would normally be passed to the function
         should follow::
 
-            generate_something.save_to_cache(3, 5, 6)
+            await generate_something.save_to_cache(3, 5, 6)
 
         The above example is equivalent to calling
         ``generate_something(5, 6)``, if the function were to produce
@@ -471,10 +481,15 @@ class CacheRegion:
         :param should_cache_fn: function which receives the function itself, arguments this function was called with,
         and result. Should return boolean indicating whether this result should be cached.
         :param jitter_func: function to modify TTL of cached result for better dispersion of invalidation times.
-        :return:
+        :return: CachingDecoratorWrapper: function that will cache the return value and has two additional
+        methods attached to it:
+         - save_to_cache(result_, *args, **kwargs) - accepts the same arguments,
+         and could be used to save `result_` to the cache manually
+         - call_without_cache(*args, **kwargs) - matches the type of original function, accepts the same argument,
+        and could be used to call the function bypassing the cache completely.
         """
 
-        def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+        def decorator(func: Callable[P, Awaitable[R]]) -> CachedFuncWithMethods[P, R]:
             async def save_to_cache(result_: R, *args: P.args, **kwargs: P.kwargs) -> None:
                 key = function_key_generator(func, *args, **kwargs)
                 await self._set_cached_value_to_backend(
@@ -497,9 +512,8 @@ class CacheRegion:
                     should_cache_fn=should_cache_fn,
                 )
 
-            # TODO: How to explain mypy about these dynamic attributes?
-            caching_dec_impl.call_without_cache = func  # type: ignore[attr-defined]
+            caching_dec_impl.call_without_cached = func  # type: ignore[attr-defined]
             caching_dec_impl.save_to_cache = save_to_cache  # type: ignore[attr-defined]
-            return caching_dec_impl
+            return cast(CachedFuncWithMethods[P, R], caching_dec_impl)
 
-        return decorator
+        return cast(CachingDecorator, decorator)

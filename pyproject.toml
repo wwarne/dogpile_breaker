@@ -1,7 +1,7 @@
 [project]
 name = "dogpile_breaker"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Cache for Asyncio Applications with Anti-Dogpile Effect"
 readme = "README.md"
 authors = [
     { name = "Dmitry P.", email = "wwarne@gmail.com" }
