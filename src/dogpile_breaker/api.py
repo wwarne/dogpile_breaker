@@ -4,13 +4,14 @@ import json
 import random
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
 from typing_extensions import Self
 
 from .exceptions import CantDeserializeError
+from .middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11):
     from asyncio import timeout
@@ -158,10 +159,25 @@ class CacheRegion:
         self,
         backend: type[StorageBackend],
         backend_arguments: dict[str, Any],
+        middlewares: Sequence[StorageBackendMiddleware | type[StorageBackendMiddleware]] = (),
     ) -> Self:
         self.backend_storage = backend(**backend_arguments)
         await self.backend_storage.initialize()
+        for wrapper in reversed(middlewares):
+            self.wrap(wrapper)
         return self
+
+    def wrap(self, middleware: StorageBackendMiddleware | type[StorageBackendMiddleware]) -> None:
+        """Takes a StorageBackendMiddleware instance or class and wraps the attached backend."""
+
+        # if we were passed a type rather than an instance then
+        # initialize it.
+        middleware_instance = middleware() if isinstance(middleware, type) else middleware
+
+        if not isinstance(middleware_instance, StorageBackendMiddleware):
+            raise TypeError(f"{middleware_instance} is not a valid StorageBackendMiddleware")  # noqa: EM102,TRY003
+
+        self.backend_storage = middleware_instance.wrap(self.backend_storage)
 
     async def aclose(self) -> None:
         await self.backend_storage.aclose()

@@ -207,10 +207,81 @@ print(result)
 
 ```
 
-Mypy will say ` has no attribute "call_without_cache" and has no attribute "save_to_cache"`
-Doesn't know for now how to type this dynamic attributes.
+### Middlewares
 
+The StorageBackendMiddleware is a class provided to easily augment existing 
+backend behavior without having to extend the original class.
 
+Middlewares are added to the CacheRegion object using the CacheRegion.configure() method. 
+Only the overridden methods need to be specified and the real backend can be accessed 
+with the `self.proxied` object from inside the `StorageBackendMiddleware`.
+
+Classes that extend `StorageBackendMiddleware` can be stacked together.
+The `.proxied` property will always point to either the concrete backend instance or the next middleware 
+in the chain that a method can be delegated towards.
+
+```python
+
+from dogpile_breaker import StorageBackendMiddleware
+
+import logging
+log = logging.getLogger(__name__)
+
+class LoggingMiddleware(StorageBackendMiddleware):
+    async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
+        log.debug('Setting Cache Key: %s' % key)
+        await self.proxied.set_serialized(key, value)
+```
+
+`StorageBackendMiddleware` can be be configured to optionally take arguments
+In the example below, the `RetryDeleteMiddleware` class accepts a retry_count parameter on initialization. 
+In the event of an exception on delete(), it will retry this many times before returning:
+
+```python
+from dogpile_breaker import StorageBackendMiddleware
+
+class RetryDeleteMiddleware(StorageBackendMiddleware):
+    def __init__(self, retry_count: int = 5) -> None:
+        self.retry_count = retry_count
+
+    async def delete(self, key: str) -> None:
+        retries = self.retry_count
+        while retries > 0:
+            retries -= 1
+            try:
+                return await self.proxied.delete(key)
+            except asyncio.CancelledError:
+                # never consume CancelledError
+                # https://superfastpython.com/asyncio-task-cancellation-best-practices/
+                raise 
+            except Exception:
+                pass
+```
+
+The wrap parameter of the CacheRegion.configure() accepts a list which can contain any combination of instantiated proxy objects as well as uninstantiated proxy classes. Putting the two examples above together would look like this:
+
+```python
+
+from dogpile_breaker import CacheRegion, RedisStorageBackend
+
+retry_middleware = RetryDeleteMiddleware(5)
+
+region = CacheRegion(
+        serializer=serialize_func,
+        deserializer=deserialize_func,
+    )
+await region.configure(
+        backend=RedisStorageBackend,
+        backend_arguments={},
+        middlewares=[LoggingMiddleware, retry_middleware]
+    )
+```
+
+In the above example, the `LoggingMiddleware` object would be instantated by the `CacheRegion` 
+and applied to wrap requests on behalf of the `retry_middleware` instance; 
+that proxy in turn wraps requests on behalf of the original `RedisStorageBackend` backend.
+
+So Chain of responsibility is going to be LoggingMiddleware -> retry_middleware -> RedisStorageBackend
 
 ## License
 
