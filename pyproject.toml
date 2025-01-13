@@ -1,6 +1,6 @@
 [project]
 name = "dogpile_breaker"
-version = "0.3.0"
+version = "0.4.10"
 description = "Cache for Asyncio Applications with Anti-Dogpile Effect"
 readme = "README.md"
 authors = [

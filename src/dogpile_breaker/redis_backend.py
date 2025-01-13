@@ -17,6 +17,7 @@ class RedisStorageBackend:
         password: str | None = None,
         db: int = 0,
         max_connections: int = 10,
+        timeout: int | None = 20,
         socket_timeout: float = 0.5,
         redis_expiration_func: Callable[[int], int] = double_ttl,
     ) -> None:
@@ -49,6 +50,7 @@ class RedisStorageBackend:
             username=username,
             password=password,
             socket_timeout=socket_timeout,
+            timeout=timeout,
         )
         self.redis = AsyncRedis(
             connection_pool=self.pool,

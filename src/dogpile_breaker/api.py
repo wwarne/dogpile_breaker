@@ -117,43 +117,7 @@ class CacheRegion:
         self.serializer = serializer
         self.deserializer = deserializer
         self.backend_storage: StorageBackend
-        self.events: dict[str, asyncio.Event] = {}
-
-        self.check_storage_locks: dict[str, asyncio.Lock] = {}
-        self.check_storage_tasks: dict[str, asyncio.Task] = {}
-        # This text describes tricks I use to help the case then the cache is empty.
-        # Imagine we have 1 process with 200 coroutines asking for get_or_create() wit the same parameters
-        # As we don't have data in cache - only 1 coroutine is going to run regenerate_func and save data to the cache
-        # while other 199 sleep a little and then check if data is available.
-        # Therefore, they are spamming cache with requests.
-        # I decided to use asyncio.Event to help reduce those requests.
-        # Idea here is - I will create asyncio.Event and every coroutine waiting for the same data
-        # is going to wait for it.
-        # The one coroutine calculating the data are going to do `event.set()` then it's done.
-        # After event.set all the waiting coroutines are woke up by eventloop so they can grab data
-        # and return it to the user. So we will reduce number of requests hitting Redis server.
-
-        # But another interesting case:
-        # Imagine we have 2 processes, each of them have 200 coroutines, all requesting the same cache key.
-        # While in process #1 everything is going to work as described before
-        # inside process #2 all the 200 coroutine couldn't get the lock and run regenerate_func()
-        # So they need a way of knowing then the cache is updated
-        # To solve this I will run a `_check_if_data_apper_in_cache` coroutine. It will periodically check the cache
-        # and if new data  available it will set `event.set()` allowing other coroutines to grab this data and return.
-
-        # Using the _check_if_data_apper_in_cache helps reduce the number of requests to Redis server.
-        # For example instead of 200 request every N seconds then it's only 3-4 requests from one coroutine
-        # while other 200 just waiting.
-
-        # Of course `_check_if_data_apper_in_cache` and waiting for an event should have timeout.
-        # Process regenerating data in cache could be killed or crashed and we don't want end up in an infinite loop
-        # That's why I use asyncio.timeout to limit the waiting time.
-
-        # Another interesting case is then we have 200 coroutines waiting the same cache key.
-        # One coroutine grabs the lock and calculated the data.
-        # But after running function `should_cache_fn` we decided that we don't want to store result in cache.
-        # Now we still have an empty cache and 199 requests.
-        # In that case I use asyncio.Lock so
+        self.awaits: dict[str, asyncio.Future] = {}
 
     async def configure(
         self,
@@ -212,25 +176,35 @@ class CacheRegion:
         :param jitter_func: a function that randomly changes the ttl of a record to achieve more even distribution
         :return:
         """
-        value = await self._get_from_backend(key=key)
-        if value is None:
-            if key not in self.events:
-                self.events[key] = asyncio.Event()
-                self.check_storage_locks[key] = asyncio.Lock()
-            cache_handler = self._non_existed_cache_handler
+        # use tmp cached awaitables to avoid thundering herd
+        herd_leader = self.awaits.get(key, None)
+        if herd_leader is None:
+            # we use Future because you can `await` it multiple times
+            # All calls to `get_or_create` with the same `key` would be groupped into one `singleflight`
+            # only one request is actually going to be executed while others is going to wait for this Future() object
+            herd_leader = asyncio.Future()
+            self.awaits[key] = herd_leader
+
+            try:
+                value = await self._get_from_backend(key=key)
+                cache_handler = self._non_existed_cache_handler if value is None else self._existed_cache_handler
+                result = await cache_handler(
+                    key=key,
+                    ttl_sec=ttl_sec,
+                    lock_period_sec=lock_period_sec,
+                    data_from_cache=value,
+                    generate_func=generate_func,
+                    should_cache_fn=should_cache_fn,
+                    generate_func_args=generate_func_args,
+                    generate_func_kwargs=generate_func_kwargs,
+                    jitter_func=jitter_func,
+                )
+                herd_leader.set_result(result)
+            finally:
+                self.awaits.pop(key, None)
         else:
-            cache_handler = self._existed_cache_handler
-        return await cache_handler(
-            key=key,
-            ttl_sec=ttl_sec,
-            lock_period_sec=lock_period_sec,
-            data_from_cache=value,
-            generate_func=generate_func,
-            should_cache_fn=should_cache_fn,
-            generate_func_args=generate_func_args,
-            generate_func_kwargs=generate_func_kwargs,
-            jitter_func=jitter_func,
-        )
+            result = await herd_leader
+        return result
 
     async def _existed_cache_handler(
         self,
@@ -303,13 +277,10 @@ class CacheRegion:
         # In the meantime, we return outdated data to avoid making the clients wait.
         return data_from_cache.payload
 
-    async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> None:
+    async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
         """
         This is a coroutine which checks if the data is apper in the cache in case the process refreshing the data
         is not the current one (it could be on another machine for example).
-        Checking cache with only one coroutine helps reduce the load on redis server.
-        (we are doing only one request each lock_period_sec / 4 instead of N requests from
-        every requests waiting for a data.)
         :param key: Key to check in cache
         :param lock_period_sec: Lock period for refreshing data. If data won't appear after this time
         :return:
@@ -317,18 +288,12 @@ class CacheRegion:
         try:
             async with timeout(lock_period_sec):
                 while True:
-                    if key not in self.check_storage_locks:
-                        return
-                    async with self.check_storage_locks[key]:
-                        data_from_cache = await self._get_from_backend(key=key)
-                        if data_from_cache:
-                            self.events[key].set()
-                            del self.check_storage_tasks[key]
-                            return
-                        await asyncio.sleep(lock_period_sec / 4)
+                    data_from_cache = await self._get_from_backend(key=key)
+                    if data_from_cache:
+                        return data_from_cache
+                    await asyncio.sleep(lock_period_sec / 4)
         except asyncio.TimeoutError:
-            del self.check_storage_tasks[key]
-            return
+            return None
 
     async def _non_existed_cache_handler(
         self,
@@ -365,30 +330,7 @@ class CacheRegion:
                         jitter_func=jitter_func,
                     )
                 await self.backend_storage.unlock(key)
-
-                # we calculated the new data so we need to wait coroutines waiting for that event
-                if key in self.events:
-                    self.events[key].set()
-
-                # if we saved data in cache - we don't need this event and coroutine to check the cache
-                # if we didn't save data in cache - all waiting coroutines
-                # are going to run another cycle of while data_from_cache is None:
-                # so they are going to call regenerate_func one after another, only 1 at the time
-                # so they won't overload the backend
-                self.events.pop(key, None)
-                self.check_storage_locks.pop(key, None)
-                check_task = self.check_storage_tasks.pop(key, None)
-                if check_task:
-                    check_task.cancel()
                 return result
-
-            # Waiting for another process to update the data in the cache.
-            # We are periodically polling the cache in a loop.
-            if key not in self.check_storage_tasks:
-                # run a coroutine which is going to check the cache periodically
-                self.check_storage_tasks[key] = asyncio.create_task(
-                    self._check_if_data_apper_in_cache(key, lock_period_sec)
-                )
             # We wait timeout(lock_period_sec)
             # because if we just check whether anything has appeared in the cache,
             # we could end up in a situation where the process updating the cache has crashed.
@@ -398,29 +340,10 @@ class CacheRegion:
             # read the data from the cache (which will be None), exit this loop,
             # and enter a new iteration of the outer while loop,
             # where we will try to acquire the lock again, calculate, and write the data to the cache.
-            if key in self.events:
-                # We will run  this codepath in case that `if grabbed_lock:` still running
-                # so we have an event to wait and we just wait.
-                await self._wait_for_data_saved_in_cache_event(key, lock_period_sec)
-                data_from_cache = await self._get_from_backend(key=key)
-            else:
-                # We will run this code if our `if grabbed_lock` branch is done.
-                # So it deleted Event and _check_if_data_apper_in_cache task.
-                # And if the data is still not in cache it means that `should_cache_fn` function
-                # decided that result is not suited to be in cache.
-                await asyncio.sleep(lock_period_sec / 2)
-                data_from_cache = None
+            data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
         return data_from_cache.payload
-
-    async def _wait_for_data_saved_in_cache_event(self, key: str, lock_period_sec: int) -> None:
-        try:
-            async with timeout(lock_period_sec):
-                if key in self.events:
-                    await self.events[key].wait()
-        except asyncio.TimeoutError:
-            return
 
     async def _get_from_backend(
         self,

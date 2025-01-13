@@ -21,16 +21,17 @@ causing a significant load spike.
 
 This package addresses the dogpile effect using several strategies:
 
-- **Exclusive Lock:** Ensures only one process regenerates data.
+- **Exclusive Distributed Lock:** Ensures only one process regenerates data.
 - **Extended Cache Time:** Keeps data longer than its expiration to serve stale data temporarily.
 - **Jitter Application:** Distributes expiration times more evenly to prevent synchronized cache invalidation.
+- **Thundering herd protection:** Simultaneously requests to same key are grouped and only load from source once.
 
 Redis is used as the main cache storage due to its reliability and widespread use.
 
-## Exclusive Lock
+## Exclusive Distributed Lock
 
 Before regenerating cached data, the process tries to acquire a Redis lock. 
-This ensures that only one request regenerates data, 
+This ensures that only one request regenerates data (even if we have our app on different hosts but using the same cache), 
 while others either wait (if no cached data exists) or use expired data. 
 This approach reduces backend load and speeds up cache regeneration.
 
@@ -59,6 +60,22 @@ To prevent this, we use random jitter, which levels expiration times, reducing b
 
 By default, we use the `full_jitter` algorithm described in [this AWS article](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
 You can provide your own `jitter_func` for customization.
+
+## Thundering herd protection
+
+It's a duplicate function call suppression mechanism.
+
+Then we have a lot of calls  we group concurrent requests to same resource(cache key) into a singleflight,
+which will load from remote cache OR data source only once.
+
+Exclusive Distributed Lock helps then you have the same requests hitting different instances of your application
+(for example your app is running on 4 hosts and each of them got  request for the same data)
+Thundering herd protection helps then you have a lot of requests hitting the same instance. For example you
+have 100 requests for the same data hitting 1 instance of your app. Only 1 request is going to calculate required data
+while 99 are going to wait for it and use the result of the first one.
+
+This is why you can find that number of total redis GET commands count is reduced under high concurrency
+
 
 ## Solution Concept
 
