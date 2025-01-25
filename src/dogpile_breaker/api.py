@@ -13,8 +13,8 @@ from typing_extensions import Self
 from .exceptions import CantDeserializeError
 from .middleware import StorageBackendMiddleware
 
-if sys.version_info >= (3, 11):
-    from asyncio import timeout
+if sys.version_info >= (3, 11, 3):
+    from asyncio import timeout  # type: ignore[attr-defined]
 else:
     from async_timeout import timeout
 
@@ -121,11 +121,11 @@ class CacheRegion:
 
     async def configure(
         self,
-        backend: type[StorageBackend],
+        backend_class: type[StorageBackend],
         backend_arguments: dict[str, Any],
         middlewares: Sequence[StorageBackendMiddleware | type[StorageBackendMiddleware]] = (),
     ) -> Self:
-        self.backend_storage = backend(**backend_arguments)
+        self.backend_storage = backend_class(**backend_arguments)
         await self.backend_storage.initialize()
         for wrapper in reversed(middlewares):
             self.wrap(wrapper)

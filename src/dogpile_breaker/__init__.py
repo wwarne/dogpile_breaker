@@ -1,7 +1,14 @@
-__version__ = "0.2.0"
+__version__ = "0.5.0"
 
 from .api import CacheRegion, ShouldCacheFunc, StorageBackend
 from .middleware import StorageBackendMiddleware
-from .redis_backend import RedisStorageBackend
+from .redis_backend import RedisSentinelBackend, RedisStorageBackend
 
-__all__ = ["CacheRegion", "RedisStorageBackend", "ShouldCacheFunc", "StorageBackend", "StorageBackendMiddleware"]
+__all__ = [
+    "CacheRegion",
+    "RedisSentinelBackend",
+    "RedisStorageBackend",
+    "ShouldCacheFunc",
+    "StorageBackend",
+    "StorageBackendMiddleware",
+]
