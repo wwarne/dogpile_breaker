@@ -1,4 +1,7 @@
+import asyncio
+import sys
 from collections.abc import Callable
+from typing import Any, TypeAlias, TypeVar
 
 from redis.asyncio import BlockingConnectionPool as AsyncBlockingConnectionPool
 from redis.asyncio import Redis as AsyncRedis
@@ -11,15 +14,8 @@ def double_ttl(value: int) -> int:
 class RedisStorageBackend:
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 6379,
-        username: str | None = None,
-        password: str | None = None,
-        db: int = 0,
-        max_connections: int = 10,
-        timeout: int | None = 20,
-        socket_timeout: float = 0.5,
         redis_expiration_func: Callable[[int], int] = double_ttl,
+        **redis_kwargs: Any,
     ) -> None:
         # Without the pool every call to try_lock creates a connection to redis
         # so if we have 100 coroutines calling cached_function which is trying to get a lock
@@ -41,20 +37,21 @@ class RedisStorageBackend:
         # under load.
         # BlockingConnectionPool class that works as expected.
         # For some reason it isn't mentioned in documentation and honestly it should be the default pool.
-
+        redis_kwargs["decode_responses"] = False
+        retry = redis_kwargs.pop("retry", Retry(ExponentialBackoff(), 3))
+        # note - during development if you set Redis's address as 'localhost' - it connects to it
+        # via IPv4 & IPv6 then producing two connection errors merged together into OSError
+        # and retry_on_error does not work.
+        retry_on_error = redis_kwargs.pop(
+            "retry_on_error", [RedisConnectionError, RedisTimeoutError, ConnectionRefusedError]
+        )
         self.pool = AsyncBlockingConnectionPool(
-            max_connections=max_connections,
-            host=host,
-            port=port,
-            db=db,
-            username=username,
-            password=password,
-            socket_timeout=socket_timeout,
-            timeout=timeout,
+            retry=retry,
+            retry_on_error=retry_on_error,
+            **redis_kwargs,
         )
         self.redis = AsyncRedis(
             connection_pool=self.pool,
-            decode_responses=False,
         )
         self.redis_expiration_func = redis_expiration_func
 
@@ -65,8 +62,8 @@ class RedisStorageBackend:
         # https://github.com/redis/redis-py/issues/2995#issuecomment-1764876240
         # by default closing redis won't close the connection pool and it could lead
         # to problems. So we need to make sure we close the connections.
-        await self.redis.aclose()
-        await self.pool.aclose()
+        await self.redis.aclose()  # type: ignore[attr-defined]
+        await self.pool.aclose()  # type: ignore[attr-defined]
 
     async def get_serialized(self, key: str) -> bytes | None:
         return await self.redis.get(key)
