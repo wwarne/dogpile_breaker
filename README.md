@@ -158,7 +158,7 @@ async def expensive_func(sleep_for: int) -> str:
 
 async def main() -> None:
     await cache_instance.configure(
-        backend=RedisStorageBackend,
+        backend_class=RedisStorageBackend,
         backend_arguments={
             "host": 'localhost',
             "port": 6379,
@@ -224,6 +224,41 @@ print(result)
 
 ```
 
+### Redis storage backends
+
+There are two Redis backends `RedisStorageBackend` and `RedisSentinelBackend`  
+
+#### RedisStorageBackend
+
+Used to connect to a single Redis instance.
+
+```python
+from dogpile_breaker import RedisStorageBackend
+from dogpile_breaker.redis_backend import double_ttl
+
+await cache_instance.configure(
+        backend_class=RedisStorageBackend,
+        backend_arguments={
+            "host": 'localhost',
+            "port": 6379,
+            "db": 0,
+            "username": "redis_user",
+            "password": "secret",
+            "max_connections": 200,
+            "timeout": 10,
+            "socket_timeout": 0.5,
+            "redis_expiration_func": double_ttl,
+        }
+    )
+
+```
+
+#### RedisSentinelBackend
+
+Used to connect to a cluster of Redis instances using Sentinel
+
+
+
 ### Middlewares
 
 The StorageBackendMiddleware is a class provided to easily augment existing 
@@ -284,14 +319,14 @@ from dogpile_breaker import CacheRegion, RedisStorageBackend
 retry_middleware = RetryDeleteMiddleware(5)
 
 region = CacheRegion(
-        serializer=serialize_func,
-        deserializer=deserialize_func,
-    )
+    serializer=serialize_func,
+    deserializer=deserialize_func,
+)
 await region.configure(
-        backend=RedisStorageBackend,
-        backend_arguments={},
-        middlewares=[LoggingMiddleware, retry_middleware]
-    )
+    backend_class=RedisStorageBackend,
+    backend_arguments={},
+    middlewares=[LoggingMiddleware, retry_middleware]
+)
 ```
 
 In the above example, the `LoggingMiddleware` object would be instantated by the `CacheRegion` 
