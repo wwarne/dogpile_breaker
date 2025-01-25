@@ -1,28 +1,14 @@
-import asyncio
-import sys
 from collections.abc import Callable
-from typing import Any, TypeAlias, TypeVar
+from typing import Any
 
 from redis.asyncio import BlockingConnectionPool as AsyncBlockingConnectionPool
-from redis.asyncio import Redis as AsyncRedis
-from redis.asyncio import Sentinel, SentinelConnectionPool
-from redis.asyncio.connection import AbstractConnection
+from redis.asyncio import Sentinel
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-# the functionality is available in 3.11.x but has a major issue before
-# 3.11.3. See https://github.com/redis/redis-py/issues/2633
-if sys.version_info >= (3, 11, 3):
-    from asyncio import timeout as async_timeout  # type: ignore[attr-defined]
-else:
-    from async_timeout import timeout as async_timeout
-
-T = TypeVar("T")
-_ConnectionT = TypeVar("_ConnectionT", bound=AbstractConnection)
-# To describe a function parameter that is unused and will work with anything.
-Unused: TypeAlias = object
+from .redis_client import AsyncRedisClient, SentinelBlockingPool
 
 
 def double_ttl(value: int) -> int:
@@ -68,7 +54,7 @@ class RedisStorageBackend:
             retry_on_error=retry_on_error,
             **redis_kwargs,
         )
-        self.redis = AsyncRedis(
+        self.redis = AsyncRedisClient(
             connection_pool=self.pool,
         )
         self.redis_expiration_func = redis_expiration_func
@@ -122,56 +108,6 @@ class RedisStorageBackend:
         await self.redis.delete(key)
 
 
-class RedisSentinelBlockingPool(SentinelConnectionPool):
-    """
-    It performs the same function as the default
-    `redis.asyncio.SentinelConnectionPool` implementation, in that,
-    it maintains a pool of reusable connections that can be shared by
-    multiple async redis clients.
-
-    The difference is that, in the event that a client tries to get a
-    connection from the pool when all of connections are in use, rather than
-    raising a `redis.ConnectionError` (as the default implementation does), it
-    blocks the current `Task` for a specified number of seconds until
-    a connection becomes available.
-
-    Use ``max_connections`` to increase / decrease the pool size::
-
-    Use ``timeout`` to tell it either how many seconds to wait for a connection
-    to become available, or to block forever
-    """
-
-    def __init__(self, service_name: str, sentinel_manager: Sentinel, **kwargs: Any) -> None:
-        self.timeout = kwargs.pop("timeout", 20)
-        super().__init__(service_name, sentinel_manager, **kwargs)
-        self._condition = asyncio.Condition()
-
-    async def get_connection(self, command_name: Unused, *keys: Unused, **options: Unused) -> _ConnectionT:  # noqa: ARG002
-        """Gets a connection from the pool, blocking until one is available"""
-        try:
-            async with self._condition:  # noqa: SIM117
-                async with async_timeout(self.timeout):
-                    await self._condition.wait_for(self.can_get_connection)  # type: ignore[attr-defined]
-                    connection = super().get_available_connection()  # type: ignore[attr-defined,misc]
-        except asyncio.TimeoutError as err:
-            raise ConnectionError("No connection available.") from err  # noqa: EM101, TRY003
-
-        # We now perform the connection check outside of the lock.
-        try:
-            await self.ensure_connection(connection)  # type: ignore[attr-defined]
-        except BaseException:
-            await self.release(connection)
-            raise
-        else:
-            return connection
-
-    async def release(self, connection: AbstractConnection) -> None:
-        """Releases the connection back to the pool."""
-        async with self._condition:
-            await super().release(connection)
-            self._condition.notify()
-
-
 class RedisSentinelBackend(RedisStorageBackend):
     def __init__(
         self,
@@ -192,14 +128,15 @@ class RedisSentinelBackend(RedisStorageBackend):
             retry_on_error=retry_on_error,
             **redis_kwargs,
         )
-        self.redis: AsyncRedis
+        self.redis: AsyncRedisClient
         self.master_name = master_name
         self.redis_expiration_func = redis_expiration_func
 
     async def initialize(self) -> None:
         self.redis = self.sentinel.master_for(
             self.master_name,
-            connection_pool_class=RedisSentinelBlockingPool,
+            redis_class=AsyncRedisClient,
+            connection_pool_class=SentinelBlockingPool,
         )  # makes a connection
         await self.redis.initialize()
 
