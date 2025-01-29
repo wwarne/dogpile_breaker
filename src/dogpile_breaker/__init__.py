@@ -1,8 +1,8 @@
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from .api import CacheRegion, ShouldCacheFunc, StorageBackend
-from .middleware import StorageBackendMiddleware
-from .redis_backend import RedisSentinelBackend, RedisStorageBackend
+from .backends.redis_backend import RedisSentinelBackend, RedisStorageBackend
+from .middlewares.middleware import StorageBackendMiddleware
 
 __all__ = [
     "CacheRegion",

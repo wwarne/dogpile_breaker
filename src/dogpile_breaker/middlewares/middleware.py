@@ -3,7 +3,7 @@ import typing
 from typing_extensions import Self
 
 if typing.TYPE_CHECKING:
-    from .api import StorageBackend
+    from dogpile_breaker.api import StorageBackend
 
 
 class StorageBackendMiddleware:

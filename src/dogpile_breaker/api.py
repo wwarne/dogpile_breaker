@@ -10,8 +10,9 @@ from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
 from typing_extensions import Self
 
+from .middlewares.middleware import StorageBackendMiddleware
+
 from .exceptions import CantDeserializeError
-from .middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11, 3):
     from asyncio import timeout  # type: ignore[attr-defined]
@@ -117,7 +118,7 @@ class CacheRegion:
         self.serializer = serializer
         self.deserializer = deserializer
         self.backend_storage: StorageBackend
-        self.awaits: dict[str, asyncio.Future] = {}
+        self.awaits: dict[str, asyncio.Future[Any]] = {}
 
     async def configure(
         self,
@@ -202,7 +203,7 @@ class CacheRegion:
                 herd_leader.set_result(result)
             except Exception as e:
                 herd_leader.set_exception(e)
-                raise e
+                raise
             finally:
                 self.awaits.pop(key, None)
         else:
@@ -245,7 +246,7 @@ class CacheRegion:
         is_outdated = time.time() > data_from_cache.expiration_timestamp
         if not is_outdated:
             # Everything is great, the data is up-to-date, return it.
-            return data_from_cache.payload
+            return cast(R, data_from_cache.payload)
         # The data is outdated, it needs to be updated.
         # To ensure that only one process performs the update and hits the database,
         # we acquire a lock for data update
@@ -278,7 +279,7 @@ class CacheRegion:
             return result
         # We couldn't acquire the lock, meaning another process is updating the data.
         # In the meantime, we return outdated data to avoid making the clients wait.
-        return data_from_cache.payload
+        return cast(R, data_from_cache.payload)
 
     async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
         """
@@ -346,7 +347,7 @@ class CacheRegion:
             data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
-        return data_from_cache.payload
+        return cast(R, data_from_cache.payload)
 
     async def _get_from_backend(
         self,

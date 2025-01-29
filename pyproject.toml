@@ -12,6 +12,11 @@ dependencies = [
     "redis>=5.1",
 ]
 
+[project.optional-dependencies]
+metrics = [
+    "prometheus-client>=0.21.1",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -20,7 +25,6 @@ build-backend = "hatchling.build"
 dev = [
     "mypy>=1.13.0",
     "ruff>=0.8.3",
-    "types-redis>=4.6.0.20241004",
 ]
 
 [tool.ruff]
@@ -41,3 +45,19 @@ ignore = [
     "ANN401",
     "T201",
 ]
+
+[tool.mypy]
+# mypy configurations: http://bit.ly/2zEl9WI
+enable_error_code = [
+  "truthy-bool",
+  "truthy-iterable",
+  "redundant-expr",
+  "unused-awaitable",
+  "ignore-without-code",
+  "possibly-undefined",
+  "redundant-self",
+]
+#explicit_package_bases = true
+#ignore_missing_imports = true
+strict = true
+warn_unreachable = true
