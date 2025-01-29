@@ -200,6 +200,9 @@ class CacheRegion:
                     jitter_func=jitter_func,
                 )
                 herd_leader.set_result(result)
+            except Exception as e:
+                herd_leader.set_exception(e)
+                raise e
             finally:
                 self.awaits.pop(key, None)
         else:
