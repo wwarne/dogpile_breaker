@@ -234,22 +234,22 @@ Used to connect to a single Redis instance.
 
 ```python
 from dogpile_breaker import RedisStorageBackend
-from dogpile_breaker.redis_backend import double_ttl
+from dogpile_breaker.backends.redis_backend import double_ttl
 
 await cache_instance.configure(
-        backend_class=RedisStorageBackend,
-        backend_arguments={
-            "host": 'localhost',
-            "port": 6379,
-            "db": 0,
-            "username": "redis_user",
-            "password": "secret",
-            "max_connections": 200,
-            "timeout": 10,
-            "socket_timeout": 0.5,
-            "redis_expiration_func": double_ttl,
-        }
-    )
+    backend_class=RedisStorageBackend,
+    backend_arguments={
+        "host": 'localhost',
+        "port": 6379,
+        "db": 0,
+        "username": "redis_user",
+        "password": "secret",
+        "max_connections": 200,
+        "timeout": 10,
+        "socket_timeout": 0.5,
+        "redis_expiration_func": double_ttl,
+    }
+)
 
 ```
 
@@ -334,6 +334,60 @@ and applied to wrap requests on behalf of the `retry_middleware` instance;
 that proxy in turn wraps requests on behalf of the original `RedisStorageBackend` backend.
 
 So Chain of responsibility is going to be LoggingMiddleware -> retry_middleware -> RedisStorageBackend
+
+### Prometheus Middleware
+
+It takes `region_name` as a parameter, so you can make different dashboard for every CacheRegion you're using.
+
+**⚠️ Warning - Package `prometheus-client` should be installed**
+
+By default middleware provide next metrics:
+- cache_hit_total (Counter) - Total number of cache hits
+- cache_miss_total (Counter) - Total number of cache misses
+- cache_error_total (Counter) - Total number of cache errors
+- cache_latency_seconds (Histogram) - Cache storage latency in seconds (for reads and writes)
+
+Examples of `promql` queries.
+```
+# HitRatio %
+sum(rate(cache_hit_total[5m])) by (region_name) /
+(sum(rate(cache_hit_total[5m])) by (region_name) + sum(rate(cache_miss_total[5m])) by (region_name))
+
+# RPS for cache hits
+sum(rate(cache_hit_total[5m])) by (region_name)
+# RPS for cache misses
+sum(rate(cache_miss_total[5m])) by (region_name)
+# Cache errors
+sum(rate(cache_error_total[5m])) by (region_name)
+
+# Average cache backend latencies
+sum(rate(cache_latency_seconds_sum[1m])) by (region_name, operation) /
+sum(rate(cache_latency_seconds_count[1m])) by (region_name, operation)
+
+# 95 quantile
+histogram_quantile(0.95, sum by (le, operation) (rate(cache_latency_seconds_bucket[1m])))
+(with Options->Legend [{{region_name}} {{operation}} - 95]
+or if you want them to be separate
+histogram_quantile(0.95, sum by (le, region_name) (rate(cache_latency_seconds_bucket{operation="read"}[1m])))
+and
+histogram_quantile(0.95, sum by (le) (rate(cache_latency_seconds_bucket{operation="write"}[1m])))
+```
+
+```python
+
+from dogpile_breaker.middlewares.prometheus_middleware import PrometheusMiddleware
+
+region = CacheRegion(
+    serializer=serialize_func,
+    deserializer=deserialize_func,
+)
+...
+await region.configure(
+    backend_class=RedisStorageBackend,
+    backend_arguments={},
+    middlewares=[PrometheusMiddleware(region_name='articles-cache')]
+)
+```
 
 ## License
 

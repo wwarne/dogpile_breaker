@@ -8,7 +8,7 @@ from redis.asyncio.connection import AbstractConnection
 from redis.exceptions import RedisError
 from typing_extensions import override
 
-from .exceptions import CacheBackendInteractionError
+from dogpile_breaker.exceptions import CacheBackendInteractionError
 
 # the functionality is available in 3.11.x but has a major issue before
 # 3.11.3. See https://github.com/redis/redis-py/issues/2633
@@ -21,12 +21,12 @@ _ConnectionT = TypeVar("_ConnectionT", bound=AbstractConnection)
 # To describe a function parameter that is unused and will work with anything.
 Unused: TypeAlias = object
 
-
-class AsyncRedisClient(Redis):
+class AsyncRedisClient(Redis):  # type: ignore[type-arg]
+    # Note - mypy throws error - Call to untyped function "execute_command" in typed context
     @override
     async def execute_command(self, *args: Any, **options: Any) -> Any:
         try:
-            return await super().execute_command(*args, **options)
+            return await super().execute_command(*args, **options)  # type: ignore[no-untyped-call]
         except (
             RedisError,
             socket.gaierror,
@@ -36,7 +36,7 @@ class AsyncRedisClient(Redis):
             raise CacheBackendInteractionError from e
 
 
-class SentinelBlockingPool(SentinelConnectionPool):
+class SentinelBlockingPool(SentinelConnectionPool):  # type: ignore[type-arg]
     """
     It performs the same function as the default
     `redis.asyncio.SentinelConnectionPool` implementation, in that,
@@ -66,7 +66,7 @@ class SentinelBlockingPool(SentinelConnectionPool):
             async with self._condition:  # noqa: SIM117
                 async with async_timeout(self.timeout):
                     await self._condition.wait_for(self.can_get_connection)  # type: ignore[attr-defined]
-                    connection = super().get_available_connection()  # type: ignore[attr-defined,misc]
+                    connection = super().get_available_connection()  # type: ignore[misc]
         except asyncio.TimeoutError as err:
             raise ConnectionError("No connection available.") from err  # noqa: EM101, TRY003
 
@@ -77,7 +77,7 @@ class SentinelBlockingPool(SentinelConnectionPool):
             await self.release(connection)
             raise
         else:
-            return connection
+            return connection  # type: ignore[no-any-return]
 
     async def release(self, connection: AbstractConnection) -> None:
         """Releases the connection back to the pool."""

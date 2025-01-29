@@ -60,7 +60,7 @@ class RedisStorageBackend:
         self.redis_expiration_func = redis_expiration_func
 
     async def initialize(self) -> None:
-        await self.redis.initialize()
+        _ = await self.redis.initialize()
 
     async def aclose(self) -> None:
         # https://github.com/redis/redis-py/issues/2995#issuecomment-1764876240
@@ -138,7 +138,7 @@ class RedisSentinelBackend(RedisStorageBackend):
             redis_class=AsyncRedisClient,
             connection_pool_class=SentinelBlockingPool,
         )  # makes a connection
-        await self.redis.initialize()
+        _ = await self.redis.initialize()
 
     async def aclose(self) -> None:
         # then using sentinel.master_for
