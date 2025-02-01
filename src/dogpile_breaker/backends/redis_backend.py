@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from redis.asyncio import BlockingConnectionPool as AsyncBlockingConnectionPool
 from redis.asyncio import Sentinel
@@ -66,11 +66,11 @@ class RedisStorageBackend:
         # https://github.com/redis/redis-py/issues/2995#issuecomment-1764876240
         # by default closing redis won't close the connection pool and it could lead
         # to problems. So we need to make sure we close the connections.
-        await self.redis.aclose()  # type: ignore[attr-defined]
-        await self.pool.aclose()  # type: ignore[attr-defined]
+        await self.redis.aclose()
+        await self.pool.aclose()
 
     async def get_serialized(self, key: str) -> bytes | None:
-        return await self.redis.get(key)
+        return cast(bytes | None, await self.redis.get(key))
 
     async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
         # We store the validity time of the data itself inside the `value`,
@@ -122,7 +122,7 @@ class RedisSentinelBackend(RedisStorageBackend):
             "retry_on_error", [RedisConnectionError, RedisTimeoutError, ConnectionRefusedError]
         )
         self.master_name = master_name
-        self.sentinel = Sentinel(
+        self.sentinel = Sentinel(  # type: ignore[no-untyped-call]
             sentinels=sentinels,
             retry=retry,
             retry_on_error=retry_on_error,
@@ -143,4 +143,4 @@ class RedisSentinelBackend(RedisStorageBackend):
     async def aclose(self) -> None:
         # then using sentinel.master_for
         # The Redis object "owns" the pool so it closes after closing Redis instance
-        await self.redis.aclose()  # type: ignore[attr-defined]
+        await self.redis.aclose()

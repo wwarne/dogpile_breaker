@@ -24,6 +24,8 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "mypy>=1.13.0",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.3",
     "ruff>=0.8.3",
 ]
 
@@ -45,6 +47,16 @@ ignore = [
     "ANN401",
     "T201",
 ]
+[tool.ruff.lint.per-file-ignores]
+"tests/**.py" = [
+    "ANN",  # annotations
+    "S101",  # Use of `assert` detected
+    "EM101",  # Exception must not use a string literal
+    "TRY003",  # Avoid pecifying long messages outside the exception class
+    "PLR2004",  # Magic value used in comparison
+    "SLF001",  # Private member accessed
+    "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
+]
 
 [tool.mypy]
 # mypy configurations: http://bit.ly/2zEl9WI
@@ -61,3 +73,7 @@ enable_error_code = [
 #ignore_missing_imports = true
 strict = true
 warn_unreachable = true
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+asyncio_mode = "strict"
