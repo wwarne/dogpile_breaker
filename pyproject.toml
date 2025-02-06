@@ -6,6 +6,9 @@ readme = "README.md"
 authors = [
     { name = "Dmitry P.", email = "wwarne@gmail.com" }
 ]
+[project.urls]
+"Source" = "https://github.com/wwarne/dogpile_breaker/"
+
 requires-python = ">=3.10"
 dependencies = [
     "async-timeout>=5.0.1 ; python_full_version < '3.11.3'",
