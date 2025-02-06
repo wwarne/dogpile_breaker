@@ -10,9 +10,8 @@ from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 
 from typing_extensions import Self
 
-from .middlewares.middleware import StorageBackendMiddleware
-
 from .exceptions import CantDeserializeError
+from .middlewares.middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11, 3):
     from asyncio import timeout  # type: ignore[attr-defined]
@@ -93,8 +92,8 @@ class CachedEntry:
         metadata = json.loads(bytes_metadata)
         try:
             payload = deserializer(bytes_payload)
-        except CantDeserializeError:
-            return None
+        except Exception as e:
+            raise CantDeserializeError(e) from e
         else:
             return cls(payload=payload, **metadata)
 
