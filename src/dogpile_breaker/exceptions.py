@@ -3,7 +3,7 @@ class CacheError(Exception):
 
 
 class CantDeserializeError(CacheError):
-    pass
+    """Raised if we can't deserialize data from cache via provided deserializer"""
 
 
 class CacheBackendInteractionError(CacheError):
