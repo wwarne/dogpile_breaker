@@ -1,6 +1,6 @@
 [project]
 name = "dogpile_breaker"
-version = "0.8.0"
+version = "0.9.0"
 description = "Cache for Asyncio Applications with Anti-Dogpile Effect"
 readme = "README.md"
 authors = [
@@ -74,8 +74,7 @@ enable_error_code = [
   "possibly-undefined",
   "redundant-self",
 ]
-#explicit_package_bases = true
-#ignore_missing_imports = true
+
 strict = true
 warn_unreachable = true
 

@@ -1,4 +1,4 @@
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from .api import CacheRegion, ShouldCacheFunc, StorageBackend
 from .backends.redis_backend import RedisSentinelBackend, RedisStorageBackend
