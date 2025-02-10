@@ -1,6 +1,12 @@
+from importlib.util import find_spec
+
+if not find_spec("prometheus_client"):
+    err_msg = "Prometheus client is not installed. Install it with `pip install prometheus_client`"
+    raise ImportError(err_msg)
+
 from prometheus_client import Counter, Histogram
 
-from .middleware import StorageBackendMiddleware
+from .base_middleware import StorageBackendMiddleware
 
 CACHE_HIT = Counter("cache_hit_total", "Total number of cache hits", ["region_name"])
 CACHE_MISS = Counter("cache_miss_total", "Total number of cache misses", ["region_name"])

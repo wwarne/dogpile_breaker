@@ -1,4 +1,3 @@
-from .middleware import StorageBackendMiddleware
-from .prometheus_middleware import PrometheusMiddleware
+from .base_middleware import StorageBackendMiddleware
 
-__all__ = ["PrometheusMiddleware", "StorageBackendMiddleware"]
+__all__ = ["StorageBackendMiddleware"]

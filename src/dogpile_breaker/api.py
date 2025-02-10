@@ -11,12 +11,12 @@ from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
 from typing_extensions import Self
 
 from .exceptions import CantDeserializeError
-from .middlewares.middleware import StorageBackendMiddleware
+from .middlewares.base_middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11, 3):
-    from asyncio import timeout  # type: ignore[attr-defined]
+    from asyncio import timeout
 else:
-    from async_timeout import timeout
+    from async_timeout import timeout  # type: ignore[import-not-found,no-redef]
 
 ValuePayload: TypeAlias = Any
 Serializer = Callable[[ValuePayload], bytes]
@@ -152,8 +152,8 @@ class CacheRegion:
         ttl_sec: int,
         lock_period_sec: int,
         generate_func: Callable[P, Awaitable[R]],
-        generate_func_args: P.args,
-        generate_func_kwargs: P.kwargs,
+        generate_func_args: tuple[Any, ...],
+        generate_func_kwargs: dict[str, Any],  # P.kwargs,
         should_cache_fn: ShouldCacheFunc | None = None,
         jitter_func: JitterFunc | None = full_jitter,
     ) -> R:
@@ -217,8 +217,8 @@ class CacheRegion:
         data_from_cache: CachedEntry | None,  # None to make mypy happy because we always call this func with Data
         generate_func: Callable[P, Awaitable[R]],
         should_cache_fn: ShouldCacheFunc | None,
-        generate_func_args: P.args,
-        generate_func_kwargs: P.kwargs,
+        generate_func_args: tuple[Any, ...],  # P.args,
+        generate_func_kwargs: dict[str, Any],  # P.kwargs,
         jitter_func: JitterFunc | None,
     ) -> R:
         if data_from_cache is None:
@@ -306,8 +306,8 @@ class CacheRegion:
         data_from_cache: CachedEntry | None,
         generate_func: Callable[P, Awaitable[R]],
         should_cache_fn: ShouldCacheFunc | None,
-        generate_func_args: P.args,
-        generate_func_kwargs: P.kwargs,
+        generate_func_args: tuple[Any, ...],  # P.args,
+        generate_func_kwargs: dict[str, Any],  # P.kwargs,
         jitter_func: JitterFunc | None,
     ) -> R:
         # This is the case when there is nothing in the cache.
