@@ -394,10 +394,10 @@ class CacheRegion:
         cache and conditionally call the function.  See that
         method for additional behavioral details.
 
-        The function is also given an attribute `call_without_cached` containing non-cached version of a function.
+        The function is also given an attribute `call_without_cache` containing non-cached version of a function.
         So in case you want to call function directly
 
-          await generate_something.call_without_cached(3,4)
+          await generate_something.call_without_cache(3,4)
 
          equivalent to calling ``generate_something(3, 4)`` without using cache at all.
 
@@ -454,7 +454,7 @@ class CacheRegion:
                     should_cache_fn=should_cache_fn,
                 )
 
-            caching_dec_impl.call_without_cached = func  # type: ignore[attr-defined]
+            caching_dec_impl.call_without_cache = func  # type: ignore[attr-defined]
             caching_dec_impl.save_to_cache = save_to_cache  # type: ignore[attr-defined]
             return cast(CachedFuncWithMethods[P, R], caching_dec_impl)
 
