@@ -26,6 +26,7 @@ source = { editable = "." }
 dependencies = [
     { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
     { name = "redis" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -46,6 +47,7 @@ requires-dist = [
     { name = "async-timeout", marker = "python_full_version < '3.11.3'", specifier = ">=5.0.1" },
     { name = "prometheus-client", marker = "extra == 'metrics'", specifier = ">=0.21.1" },
     { name = "redis", specifier = ">=5.1" },
+    { name = "typing-extensions", specifier = ">=4.12.2" },
 ]
 
 [package.metadata.requires-dev]

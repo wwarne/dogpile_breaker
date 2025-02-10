@@ -274,7 +274,7 @@ in the chain that a method can be delegated towards.
 
 ```python
 
-from dogpile_breaker import StorageBackendMiddleware
+from dogpile_breaker.middlewares import StorageBackendMiddleware
 
 import logging
 log = logging.getLogger(__name__)
@@ -290,7 +290,7 @@ In the example below, the `RetryDeleteMiddleware` class accepts a retry_count pa
 In the event of an exception on delete(), it will retry this many times before returning:
 
 ```python
-from dogpile_breaker import StorageBackendMiddleware
+from dogpile_breaker.middlewares import StorageBackendMiddleware
 
 class RetryDeleteMiddleware(StorageBackendMiddleware):
     def __init__(self, retry_count: int = 5) -> None:
@@ -375,7 +375,7 @@ histogram_quantile(0.95, sum by (le) (rate(cache_latency_seconds_bucket{operatio
 
 ```python
 
-from dogpile_breaker.middlewares.prometheus_middleware import PrometheusMiddleware
+from dogpile_breaker.middlewares import PrometheusMiddleware
 
 region = CacheRegion(
     serializer=serialize_func,
