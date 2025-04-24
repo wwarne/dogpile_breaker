@@ -268,6 +268,9 @@ Middlewares are added to the CacheRegion object using the CacheRegion.configure(
 Only the overridden methods need to be specified and the real backend can be accessed 
 with the `self.proxied` object from inside the `StorageBackendMiddleware`.
 
+If you override `async def initialize(self):` inside you middleware - don't forget to call 
+`await self.proxied.initialize()` so every middleware in a stack would be initialized properly.
+
 Classes that extend `StorageBackendMiddleware` can be stacked together.
 The `.proxied` property will always point to either the concrete backend instance or the next middleware 
 in the chain that a method can be delegated towards.
