@@ -77,7 +77,7 @@ class CachedEntry:
     expiration_timestamp: int | float
 
     def to_bytes(self, serializer: Serializer) -> bytes:
-        # convert data to bytes so it can be stored in redis.
+        # convert data to bytes so it can be stored in cache backend.
         # metadata is serialized with standard `json` module
         # so the user only should write serializer and deserializer for its own data stored in `payload`
         main_data_bytes = serializer(self.payload)
@@ -126,9 +126,11 @@ class CacheRegion:
         middlewares: Sequence[StorageBackendMiddleware | type[StorageBackendMiddleware]] = (),
     ) -> Self:
         self.backend_storage = backend_class(**backend_arguments)
-        await self.backend_storage.initialize()
         for wrapper in reversed(middlewares):
             self.wrap(wrapper)
+        # Call initialize after wrapping middleware
+        # So every middleware
+        await self.backend_storage.initialize()
         return self
 
     def wrap(self, middleware: StorageBackendMiddleware | type[StorageBackendMiddleware]) -> None:
