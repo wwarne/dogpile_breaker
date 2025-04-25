@@ -6,17 +6,17 @@ import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, ParamSpec, Protocol, TypeAlias, TypeVar, cast
+from typing import Any, ParamSpec, TypeAlias, TypeVar, cast
 
-from typing_extensions import Self
+from typing_extensions import Protocol, Self
 
 from .exceptions import CantDeserializeError
 from .middlewares.base_middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11, 3):
-    from asyncio import timeout  # type:ignore[attr-defined]
+    from asyncio import timeout  # type: ignore[attr-defined,import-not-found,no-redef,unused-ignore]
 else:
-    from async_timeout import timeout
+    from async_timeout import timeout  # type: ignore[import-not-found,no-redef,unused-ignore]
 
 ValuePayload: TypeAlias = Any
 Serializer = Callable[[ValuePayload], bytes]
