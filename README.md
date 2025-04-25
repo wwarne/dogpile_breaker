@@ -224,6 +224,8 @@ print(result)
 
 ```
 
+## Backends
+
 ### Redis storage backends
 
 There are two Redis backends `RedisStorageBackend` and `RedisSentinelBackend`  
@@ -258,6 +260,23 @@ await cache_instance.configure(
 Used to connect to a cluster of Redis instances using Sentinel
 
 
+### In-memory backend - An in-memory Least Recently Used (LRU) cache backend with TTL support.
+
+`MemoryBackendLRU` is a simple in-memory cache backend that maintains a bounded cache size 
+using an LRU eviction policy and enforces per-item time-to-live (TTL). 
+
+It supports optional periodic cleanup of expired entries.
+
+- **Parameters**  
+  - `max_size: int` – Maximum number of items in the cache.  
+  - `check_interval: float | None` – Interval in seconds between background cleanup runs; if `None`, expired entries are only pruned on access.
+
+### Internal Behavior
+
+- **LRU Eviction**: Uses an `OrderedDict` to track insertion/access order. When `max_size` is reached, the least recently used item is evicted.
+- **TTL Enforcement**: Stores `(value, created_at_timestamp, ttl)` tuples. On `get` operation, expired entries are removed.
+- **Periodic Cleanup**: If `check_interval` is set, an `asyncio.Task` runs `_periodic_cleanup`, removing expired entries at the interval.
+- **Safety**: All cache operations are guarded by a single `asyncio.Lock`.
 
 ### Middlewares
 
@@ -390,6 +409,60 @@ await region.configure(
     backend_arguments={},
     middlewares=[PrometheusMiddleware(region_name='articles-cache')]
 )
+```
+
+### CircuitBreakerFallbackMiddleware
+
+`CircuitBreakerFallbackMiddleware` wraps a primary storage backend (e.g., Redis) to provide fault tolerance using the Circuit Breaker pattern.
+
+On backend errors, it switches to an in-memory fallback (by default `MemoryBackendLRU`).
+
+It transitions between **CLOSED**, **OPEN**, and **HALF_OPEN** states to avoid overwhelming a failing backend.
+
+- **Parameters**  
+  - `fallback_storage: StorageBackend` – Backend to use when circuit is open (defaults to `MemoryBackendLRU()`).  
+  - `failure_threshold: int` – Consecutive failure count to transition from CLOSED → OPEN.  
+  - `cooldown_seconds: float` – Time to wait in OPEN before trying backend again (transition to HALF_OPEN).  
+  - `success_threshold: int` – Consecutive success count in HALF_OPEN to transition back to CLOSED.
+
+All storage methods (`get_serialized`, `set_serialized`, `delete`, `try_lock`, `unlock`) are overridden.
+Calls are routed through the private `_call_with_circuit` helper
+
+#### Usage example
+
+```python
+import asyncio
+from dogpile_breaker import CacheRegion, RedisStorageBackend
+from dogpile_breaker.backends.memory_backend import MemoryBackendLRU
+from dogpile_breaker.middlewares.circut_breaker_fallback_middleware import CircuitBreakerFallbackMiddleware
+
+def my_serializer(data: str) -> bytes:
+    return data.encode()
+
+def my_deserializer(data: bytes) -> str:
+    return data.decode()
+
+async def main():
+    region = CacheRegion(serializer=my_serializer, deserializer=my_deserializer)
+    fallback = MemoryBackendLRU(max_size=100)
+    cb = CircuitBreakerFallbackMiddleware(
+        fallback_storage=fallback,
+        failure_threshold=2,
+        cooldown_seconds=30.0,
+        success_threshold=1
+    )
+
+    # Configure CacheRegion with Redis and the circuit breaker middleware
+    await region.configure(
+        backend_class=RedisStorageBackend,
+        backend_arguments={'host': 'localhost', 'port': 6379},
+        middlewares=[cb]
+    )
+
+    # Use region.get_or_create or decorated functions as usual.
+    value = await region.get_or_create(key='mykey', ttl_sec=10, lock_period_sec=5, generate_func=lambda: 'data')
+
+asyncio.run(main())
 ```
 
 ## License
