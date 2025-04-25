@@ -7,6 +7,7 @@ class MemoryBackendLRU:
     """
     In-memory LRU caching backend with TTL.
     """
+
     def __init__(
         self,
         max_size: int = 1000,
@@ -17,12 +18,15 @@ class MemoryBackendLRU:
         :param check_interval: interval between checks (if None then delete expired items only during _get calls).
         """
         self._max_size = max_size
-        self._cache = OrderedDict()
+        self._cache: OrderedDict[str, tuple[bytes, float, float | int]] = OrderedDict()
         self._check_interval = check_interval
         self._lock = asyncio.Lock()
         self._cleanup_task = None
         if self._check_interval:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
+
+    async def initialize(self) -> None:
+        pass
 
     async def aclose(self) -> None:
         if self._cleanup_task:
@@ -31,6 +35,8 @@ class MemoryBackendLRU:
 
     async def _periodic_cleanup(self) -> None:
         """Background task that periodically cleans up expired entries."""
+        if not self._check_interval:
+            return
         while True:
             await asyncio.sleep(self._check_interval)
             async with self._lock:
@@ -38,7 +44,7 @@ class MemoryBackendLRU:
                 expired = [
                     key
                     for key, (data, created_at, ttl) in self._cache.items()
-                    if ttl is not None and current_time >= created_at + ttl
+                    if current_time >= created_at + ttl  # ttl is always set in our version
                 ]
                 for key in expired:
                     del self._cache[key]
@@ -69,7 +75,7 @@ class MemoryBackendLRU:
         async with self._lock:
             self._cache.pop(key, None)
 
-    async def try_lock(self, key: str, lock_period_sec: int) -> bool:
+    async def try_lock(self, key: str, lock_period_sec: int) -> bool:  # noqa: ARG002
         """
         I decide to do this function as a no-op.
         We have signleflight in CacheRegion (see part where herd_leader = ...)
@@ -78,5 +84,5 @@ class MemoryBackendLRU:
         """
         return True
 
-    async def unlock(self, key: str) -> None:
+    async def unlock(self, key: str) -> None:  # noqa: ARG002
         return

@@ -1,20 +1,27 @@
 import asyncio
 import time
+from typing import Any, Generic, Protocol, TypeVar
 
 import pytest
 import pytest_asyncio
 
 from dogpile_breaker import CacheRegion
+from dogpile_breaker.api import CachedEntry
 from tests.helpers import CachedEntryFactory, default_str_deserializer, default_str_serializer, gen_some_key
 from tests.in_memory_backend import InMemoryStorage
 
+T = TypeVar("T")
 CACHE_TTL = 10
 LOCK_PERIOD = 1
 
 
+class CacheRegionFixture(Protocol):
+    async def __call__(self, cache_dict: dict[str, str | int | float | bytes] | None = None) -> CacheRegion: ...
+
+
 @pytest_asyncio.fixture
-async def preconfigured_cache():
-    async def _configure(cache_dict=None):
+async def preconfigured_cache() -> CacheRegionFixture:
+    async def _configure(cache_dict: dict[str, str | int | float | bytes] | None = None) -> CacheRegion:
         cache = CacheRegion(
             serializer=default_str_serializer,
             deserializer=default_str_deserializer,
@@ -24,14 +31,14 @@ async def preconfigured_cache():
     return _configure
 
 
-class ExpensiveFunction:
-    def __init__(self, response):
+class ExpensiveFunction(Generic[T]):
+    def __init__(self, response: T) -> None:
         self.call_count = 0
         self.response = response
-        self.called_with_args = None
-        self.called_with_kwargs = None
+        self.called_with_args: Any = None
+        self.called_with_kwargs: Any = None
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, *args: Any, **kwargs: Any) -> T:
         self.call_count += 1
         self.called_with_args = args
         self.called_with_kwargs = kwargs
@@ -41,13 +48,13 @@ class ExpensiveFunction:
 
 
 class FakeShouldCacheFunc:
-    def __init__(self, response):
+    def __init__(self, response: bool):  # noqa: FBT001
         self.call_count = 0
         self.response = response
-        self.called_with_args = None
-        self.called_with_kwargs = None
+        self.called_with_args: Any = None
+        self.called_with_kwargs: Any = None
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> bool:
         self.call_count += 1
         self.called_with_args = args
         self.called_with_kwargs = kwargs
@@ -55,9 +62,9 @@ class FakeShouldCacheFunc:
 
 
 @pytest.mark.asyncio
-async def test_configure_call_creates_backend_instance():
+async def test_configure_call_creates_backend_instance() -> None:
     class FakeBackend:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.args = args
             self.kwargs = kwargs
             self.init_called = False
@@ -76,7 +83,7 @@ async def test_configure_call_creates_backend_instance():
     }
 
     await cache.configure(
-        backend_class=FakeBackend,
+        backend_class=FakeBackend,  # type:ignore[arg-type]
         backend_arguments=backend_arguments,
     )
 
@@ -94,7 +101,11 @@ async def test_configure_call_creates_backend_instance():
     ids=["non_expired", "expired"],
 )
 @pytest.mark.asyncio
-async def test_cache_behavior_if_data_present_in_cache(preconfigured_cache, cache_data, expected):
+async def test_cache_behavior_if_data_present_in_cache(
+    preconfigured_cache: CacheRegionFixture,
+    cache_data: CachedEntry,
+    expected: str,
+) -> None:
     cache = await preconfigured_cache({"test_key": cache_data.to_bytes(serializer=default_str_serializer)})
     gen_func = ExpensiveFunction("new shiny value")
     result = await cache.get_or_create(
@@ -109,7 +120,7 @@ async def test_cache_behavior_if_data_present_in_cache(preconfigured_cache, cach
 
 
 @pytest.mark.asyncio
-async def test_calls_gen_func_if_no_data_in_cache(preconfigured_cache):
+async def test_calls_gen_func_if_no_data_in_cache(preconfigured_cache: CacheRegionFixture) -> None:
     cache = await preconfigured_cache()
     gen_func = ExpensiveFunction(response="func_result")
     result = await cache.get_or_create(
@@ -128,7 +139,7 @@ async def test_calls_gen_func_if_no_data_in_cache(preconfigured_cache):
 
 
 @pytest.mark.asyncio
-async def test_saves_data_in_cache(preconfigured_cache):
+async def test_saves_data_in_cache(preconfigured_cache: CacheRegionFixture) -> None:
     cache = await preconfigured_cache()
     cache_key = gen_some_key()
     before = await cache.backend_storage.get_serialized(cache_key)
@@ -149,7 +160,7 @@ async def test_saves_data_in_cache(preconfigured_cache):
 
 
 @pytest.mark.asyncio
-async def test_update_cache_if_expired(preconfigured_cache):
+async def test_update_cache_if_expired(preconfigured_cache: CacheRegionFixture) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_expired_timestamp(data="old expired value")
     cache = await preconfigured_cache(
@@ -171,8 +182,10 @@ async def test_update_cache_if_expired(preconfigured_cache):
 
 
 @pytest.mark.asyncio
-async def test_should_save_cache_fn_called_with_parameters_if_no_data_in_cache(preconfigured_cache):
-    cache = await preconfigured_cache()
+async def test_should_save_cache_fn_called_with_parameters_if_no_data_in_cache(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
+    cache = await preconfigured_cache(None)
     should_cache_func = FakeShouldCacheFunc(response=False)
     cache_key = gen_some_key()
     assert (await cache.backend_storage.get_serialized(cache_key)) is None
@@ -195,7 +208,9 @@ async def test_should_save_cache_fn_called_with_parameters_if_no_data_in_cache(p
 
 
 @pytest.mark.asyncio
-async def test_should_save_cache_fn_called_with_parameters_if_data_in_cache_updated(preconfigured_cache):
+async def test_should_save_cache_fn_called_with_parameters_if_data_in_cache_updated(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_expired_timestamp(data="old expired value")
     cache = await preconfigured_cache(
@@ -224,9 +239,9 @@ async def test_should_save_cache_fn_called_with_parameters_if_data_in_cache_upda
 
 
 @pytest.mark.asyncio
-async def test_do_not_save_in_cache_if_should_cache_fn_returns_false(preconfigured_cache):
+async def test_do_not_save_in_cache_if_should_cache_fn_returns_false(preconfigured_cache: CacheRegionFixture) -> None:
     cache_key = gen_some_key()
-    cache = await preconfigured_cache()
+    cache = await preconfigured_cache(None)
     assert (await cache.backend_storage.get_serialized(cache_key)) is None
     result = await cache.get_or_create(
         key=cache_key,
@@ -242,7 +257,9 @@ async def test_do_not_save_in_cache_if_should_cache_fn_returns_false(preconfigur
 
 
 @pytest.mark.asyncio
-async def test_do_not_save_updated_value_in_cache_if_should_cache_fn_returns_false(preconfigured_cache):
+async def test_do_not_save_updated_value_in_cache_if_should_cache_fn_returns_false(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_expired_timestamp(data="old expired value")
     cache = await preconfigured_cache(
@@ -261,21 +278,23 @@ async def test_do_not_save_updated_value_in_cache_if_should_cache_fn_returns_fal
     )
     assert result == "new shiny value"
     in_cache = await cache._get_from_backend(cache_key)
-    assert in_cache.payload == "old expired value"  # previous value in cache
+    assert in_cache.payload == "old expired value"  # type:ignore[union-attr]  # previous value in cache
 
 
 @pytest.mark.asyncio
-async def test_serialize_and_deserialize_working_together(preconfigured_cache):
-    cache = await preconfigured_cache()
+async def test_serialize_and_deserialize_working_together(preconfigured_cache: CacheRegionFixture) -> None:
+    cache = await preconfigured_cache(None)
     cache_key = gen_some_key()
     await cache._set_cached_value_to_backend(cache_key, "data str", CACHE_TTL, None)
     result = await cache._get_from_backend(cache_key)
-    assert result.payload == "data str"
+    assert result.payload == "data str"  # type:ignore[union-attr]
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_no_data_in_cache_gen_func_called_once(preconfigured_cache):
-    cache = await preconfigured_cache()
+async def test_concurrent_requests_no_data_in_cache_gen_func_called_once(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
+    cache = await preconfigured_cache(None)
     cache_key = gen_some_key()
     gen_func = ExpensiveFunction(response="str value")
     tasks = [
@@ -295,7 +314,7 @@ async def test_concurrent_requests_no_data_in_cache_gen_func_called_once(preconf
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_non_expired_data_in_cache(preconfigured_cache):
+async def test_concurrent_requests_non_expired_data_in_cache(preconfigured_cache: CacheRegionFixture) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_future_timestamp(data="existing value")
     cache = await preconfigured_cache(
@@ -321,7 +340,9 @@ async def test_concurrent_requests_non_expired_data_in_cache(preconfigured_cache
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_expired_data_in_cache_gen_func_called_once(preconfigured_cache):
+async def test_concurrent_requests_expired_data_in_cache_gen_func_called_once(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_expired_timestamp(data="existing value")
     cache = await preconfigured_cache({cache_key: cached_entry.to_bytes(serializer=default_str_serializer)})
@@ -343,8 +364,8 @@ async def test_concurrent_requests_expired_data_in_cache_gen_func_called_once(pr
 
 
 @pytest.mark.asyncio
-async def test_singleflight(preconfigured_cache):
-    cache = await preconfigured_cache()
+async def test_singleflight(preconfigured_cache: CacheRegionFixture) -> None:
+    cache = await preconfigured_cache(None)
     cache_key = gen_some_key()
     gen_func = ExpensiveFunction(response="str value")
     tasks = [
@@ -364,13 +385,15 @@ async def test_singleflight(preconfigured_cache):
     # because requests with same cache key are groupped together
     # only one of them is going to work with actual cache backend
     # and because of that we would have only 1 calls in this test
-    assert cache.backend_storage._get_serialized_called_num == 1
-    assert cache.backend_storage._set_serialized_called_num == 1
-    assert cache.backend_storage._try_lock_called_num == 1
+    assert cache.backend_storage._get_serialized_called_num == 1  # type:ignore[attr-defined]
+    assert cache.backend_storage._set_serialized_called_num == 1  # type:ignore[attr-defined]
+    assert cache.backend_storage._try_lock_called_num == 1  # type:ignore[attr-defined]
 
 
 @pytest.mark.asyncio
-async def test_return_slightly_expired_data_while_data_is_updating_by_another_process(preconfigured_cache):
+async def test_return_slightly_expired_data_while_data_is_updating_by_another_process(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
     cache_key = gen_some_key()
     cached_entry = CachedEntryFactory.with_expired_timestamp(data="expired value")
     cache = await preconfigured_cache(
@@ -395,7 +418,9 @@ async def test_return_slightly_expired_data_while_data_is_updating_by_another_pr
 
 
 @pytest.mark.asyncio
-async def test_wait_for_lock_timeout_if_cache_has_no_data(preconfigured_cache):
+async def test_wait_for_lock_timeout_if_cache_has_no_data(
+    preconfigured_cache: CacheRegionFixture,
+) -> None:
     cache_key = gen_some_key()
     cache = await preconfigured_cache(
         {
@@ -419,5 +444,5 @@ async def test_wait_for_lock_timeout_if_cache_has_no_data(preconfigured_cache):
     # Total is going to be 5
     # After that the timeout event happens and lock's TTL is expired
     # new call to try_lock returns True
-    assert cache.backend_storage._get_serialized_called_num == 5
-    assert cache.backend_storage._try_lock_called_num == 2
+    assert cache.backend_storage._get_serialized_called_num == 5  # type:ignore[attr-defined]
+    assert cache.backend_storage._try_lock_called_num == 2  # type:ignore[attr-defined]

@@ -13,7 +13,7 @@ def default_str_deserializer(data: bytes) -> str:
     return data.decode("utf-8")
 
 
-def gen_some_key():
+def gen_some_key() -> str:
     return f"some_key_{random.randint(1, 100000)}"
 
 

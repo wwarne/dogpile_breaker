@@ -14,9 +14,9 @@ from .exceptions import CantDeserializeError
 from .middlewares.base_middleware import StorageBackendMiddleware
 
 if sys.version_info >= (3, 11, 3):
-    from asyncio import timeout
+    from asyncio import timeout  # type:ignore[attr-defined]
 else:
-    from async_timeout import timeout  # type: ignore[import-not-found,no-redef]
+    from async_timeout import timeout
 
 ValuePayload: TypeAlias = Any
 Serializer = Callable[[ValuePayload], bytes]
@@ -247,7 +247,7 @@ class CacheRegion:
         is_outdated = time.time() > data_from_cache.expiration_timestamp
         if not is_outdated:
             # Everything is great, the data is up-to-date, return it.
-            return cast(R, data_from_cache.payload)
+            return cast("R", data_from_cache.payload)
         # The data is outdated, it needs to be updated.
         # To ensure that only one process performs the update and hits the database,
         # we acquire a lock for data update
@@ -280,7 +280,7 @@ class CacheRegion:
             return result
         # We couldn't acquire the lock, meaning another process is updating the data.
         # In the meantime, we return outdated data to avoid making the clients wait.
-        return cast(R, data_from_cache.payload)
+        return cast("R", data_from_cache.payload)
 
     async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
         """
@@ -348,7 +348,7 @@ class CacheRegion:
             data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
-        return cast(R, data_from_cache.payload)
+        return cast("R", data_from_cache.payload)
 
     async def _get_from_backend(
         self,
@@ -458,6 +458,6 @@ class CacheRegion:
 
             caching_dec_impl.call_without_cache = func  # type: ignore[attr-defined]
             caching_dec_impl.save_to_cache = save_to_cache  # type: ignore[attr-defined]
-            return cast(CachedFuncWithMethods[P, R], caching_dec_impl)
+            return cast("CachedFuncWithMethods[P, R]", caching_dec_impl)
 
-        return cast(CachingDecorator, decorator)
+        return cast("CachingDecorator", decorator)

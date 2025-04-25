@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Any
 
 
 class InMemoryStorage:
@@ -12,7 +13,7 @@ class InMemoryStorage:
     (in real-life cache backends we are waiting for server response and switch to another coroutine)
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         self._cache = kwargs.pop("cache_dict", {})
         self._get_serialized_called_num = 0
         self._set_serialized_called_num = 0
@@ -27,7 +28,7 @@ class InMemoryStorage:
     async def get_serialized(self, key: str) -> bytes | None:
         self._get_serialized_called_num += 1
         await asyncio.sleep(0)
-        return self._cache.get(key, None)
+        return self._cache.get(key, None)  # type:ignore[no-any-return]
 
     async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:  # noqa: ARG002
         self._set_serialized_called_num += 1
