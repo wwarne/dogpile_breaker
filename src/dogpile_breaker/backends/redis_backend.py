@@ -70,7 +70,7 @@ class RedisStorageBackend:
         await self.pool.aclose()
 
     async def get_serialized(self, key: str) -> bytes | None:
-        return cast(bytes | None, await self.redis.get(key))
+        return cast("bytes | None", await self.redis.get(key))
 
     async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
         # We store the validity time of the data itself inside the `value`,

@@ -13,9 +13,9 @@ from dogpile_breaker.exceptions import CacheBackendInteractionError
 # the functionality is available in 3.11.x but has a major issue before
 # 3.11.3. See https://github.com/redis/redis-py/issues/2633
 if sys.version_info >= (3, 11, 3):
-    from asyncio import timeout as async_timeout
+    from asyncio import timeout as async_timeout  # type: ignore[attr-defined,import-not-found,no-redef,unused-ignore]
 else:
-    from async_timeout import timeout as async_timeout  # type: ignore[import-not-found,no-redef]
+    from async_timeout import timeout as async_timeout  # type: ignore[import-not-found,no-redef,unused-ignore]
 
 _ConnectionT = TypeVar("_ConnectionT", bound=AbstractConnection)
 # To describe a function parameter that is unused and will work with anything.
