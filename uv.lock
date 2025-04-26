@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "dogpile-breaker"
-version = "0.9.1"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
