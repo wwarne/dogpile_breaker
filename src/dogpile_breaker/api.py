@@ -118,6 +118,7 @@ class CacheRegion:
         self.deserializer = deserializer
         self.backend_storage: StorageBackend
         self.awaits: dict[str, asyncio.Future[Any]] = {}
+        self.default_jitter_fn = full_jitter
 
     async def configure(
         self,
@@ -461,3 +462,22 @@ class CacheRegion:
             return cast("CachedFuncWithMethods[P, R]", caching_dec_impl)
 
         return cast("CachingDecorator", decorator)
+
+    async def direct_save_to_cache(self, key: str, value: ValuePayload, ttl_sec: int, jitter_func: JitterFunc) -> None:
+        """
+        Sometimes you want to override some cached value.
+        While using @cache_on_arguments decorator provides a quick way to do it,
+        sometimes you can't use decorator but still want to save something to cache.
+
+        :param key: the key of the cached value
+        :param value: the value to be cached
+        :param ttl_sec: the number of seconds for which the value is considered valid
+        :param jitter_func: a function that randomly changes the ttl of a record to achieve more even distribution.
+        Note - you can use cache_region.default_jitter_fn attribute.
+        """
+        await self._set_cached_value_to_backend(
+            key=key,
+            value=value,
+            ttl_sec=ttl_sec,
+            jitter_func=jitter_func,
+        )
