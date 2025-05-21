@@ -21,12 +21,11 @@ class MemoryBackendLRU:
         self._cache: OrderedDict[str, tuple[bytes, float, float | int]] = OrderedDict()
         self._check_interval = check_interval
         self._lock = asyncio.Lock()
-        self._cleanup_task = None
-        if self._check_interval:
-            self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     async def initialize(self) -> None:
-        pass
+        if self._check_interval:
+            self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
 
     async def aclose(self) -> None:
         if self._cleanup_task:
