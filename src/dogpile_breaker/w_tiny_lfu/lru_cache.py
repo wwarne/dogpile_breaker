@@ -31,14 +31,17 @@ class LRUCache:
         """Store a new views, potentially discarding an old value.
         Return evicted key and value pair.
         """
+
+        evicted_key, evicted_value = None, None
         # If we already have this key, remove it first
+        # after addition it will be moved to the end
         if key in self.cache:
             self.cache.pop(key)
         self.cache[key] = value
         # If we're at capacity, remove the least recently used item
         if len(self.cache) >= self.capacity:
-            return self.cache.popitem(last=False)
-        return None, None
+            evicted_key, evicted_value = self.cache.popitem(last=False)
+        return evicted_key, evicted_value
 
     def remove(self, key: str) -> None:
         self.cache.pop(key, None)

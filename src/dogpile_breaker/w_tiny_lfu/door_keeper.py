@@ -14,8 +14,8 @@ def hash_for_bloom(item: str, optimal_k: int, optimal_m: int) -> Iterable[int]:
 class BloomFilter:
     def __init__(
         self,
-        expected_items: int | None = None,
-        false_positive_rate: float | None = None,
+        expected_items: int = 100_000,
+        false_positive_rate: float = 0.01,
     ) -> None:
         self.expected_items = expected_items
         self.false_positive_rate = false_positive_rate
@@ -24,7 +24,6 @@ class BloomFilter:
         self.hash_count = self._optimal_hash_count(self.bitarray_size, self.expected_items)
         self.bits = bitarray(self.bitarray_size)
         self.bits.setall(False)  # noqa: FBT003
-        self.probe_function = hash_for_bloom
 
     def _optimal_bit_array_size(self, expected_items: int, false_positive_rate: float) -> int:
         return math.ceil((-expected_items * math.log(false_positive_rate)) / (math.log(2) ** 2))
@@ -33,10 +32,10 @@ class BloomFilter:
         return round((bit_array_size / expected_items) * math.log(2))
 
     def __contains__(self, key: str) -> bool:
-        return all(self.bits[i] for i in self.probe_function(key, self.bitarray_size, self.hash_count))
+        return all(self.bits[i] for i in hash_for_bloom(key, self.hash_count, self.bitarray_size))
 
-    def insert(self, item: str) -> None:
-        for pos in self.probe_function(item, self.bitarray_size, self.hash_count):
+    def insert(self, key: str) -> None:
+        for pos in hash_for_bloom(key, self.hash_count, self.bitarray_size):
             self.bits[pos] = True
 
     def clear(self) -> None:

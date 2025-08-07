@@ -7,19 +7,21 @@ from dogpile_breaker.w_tiny_lfu.lru_cache import LRUCache
 from dogpile_breaker.w_tiny_lfu.segmented_lru import SLRUCache
 
 
-class TinyLFU:
+class WTinyLFU:
     def __init__(
         self,
         size: int = 1_000_000,
-        sample: int = 100_000,
-        false_positive: float = 0.01,
+        sample_size: int = 100_000,
+        false_positive_rate: float = 0.01,
+        window_size_percent: int = 1,
+        protected_ratio: float = 0.8,
     ) -> None:
         self.size = size
 
         # TinyLFU periodically clear the counters
         # in the CMS to age out old access patterns,
         # ensuring the cache adapts to changing workloads.
-        self.sample = sample
+        self.sample = sample_size
         self.age = 0
 
         # To track access frequencies efficiently,
@@ -29,26 +31,25 @@ class TinyLFU:
         # Instead of counting every new access, TinyLFU uses the Doorkeeper
         # to decide if the item should be counted at all.
         # If it's seen more than once, it enters CMS.
-        self.doorkeeper = DoorKeeper(sample, false_positive)
+        self.doorkeeper = DoorKeeper(sample_size, false_positive_rate)
 
         # Cache Structure
         # Window Cache (~1%): LRU cache for recent accesses; all new items go here.
         # Main Cache (~99%): SLRU with TinyLFU-based admission
-        self.lru_percent_size = 1
+        self.lru_percent_size = window_size_percent
         self.lru_size = math.ceil((self.lru_percent_size * size) / 100)
         self.lru_size = max(self.lru_size, 1)
         self.window_cache = LRUCache(self.lru_size)
 
         self.slru_size = math.ceil(size * ((100 - self.lru_percent_size) / 100))
         self.slru_size = max(self.slru_size, 1)
-        self.main_cache = SLRUCache(total_capacity=self.slru_size)
+        self.main_cache = SLRUCache(total_capacity=self.slru_size, protected_ratio=protected_ratio)
 
-    def __getitem__(self, key: str) -> Any | None:
-        self.age += 1
-        if self.age >= self.sample:
-            self.bouncer.reset()
-            self.doorkeeper.reset()
-            self.age = 0
+    def get(self, key: str, default: Any = None) -> Any:
+        value = self[key]
+        return value if value is not None else default
+
+    def __getitem__(self, key: str) -> Any:
         self.bouncer.update(key)
         value = self.window_cache.get(key)
         if value:
@@ -59,6 +60,17 @@ class TinyLFU:
         return None
 
     def __setitem__(self, key: str, value: Any) -> None:
+        # after a fixed number of insertions (sample size),
+        # halve all counters to decay history over time, as described in the TinyLFU paper
+        # But actually clear half of Count-Min Sketch and BloomFilter is pretty hard
+        # So I just reset them
+        self.age += 1
+        if self.age >= self.sample:
+            self.bouncer.reset()
+            self.doorkeeper.reset()
+            self.age = 0
+        self.bouncer.update(key)
+
         if key in self.main_cache:
             self.main_cache.remove(key)
         # promote to window cache and
@@ -93,3 +105,6 @@ class TinyLFU:
 
     def __contains__(self, key: str) -> bool:
         return key in self.window_cache or key in self.main_cache
+
+    def __len__(self) -> int:
+        return len(self.window_cache) + len(self.main_cache)

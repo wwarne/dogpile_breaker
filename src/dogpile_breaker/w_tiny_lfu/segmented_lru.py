@@ -62,9 +62,10 @@ class SLRUCache:
         if key in self.protected_cache:
             return self.protected_cache.get(key)
         if key in self.probation_cache:
-            item_value = self.probation_cache.get(key)
-            self.protected_cache.set(key, item_value)
-            return item_value
+            value = self.probation_cache.get(key)
+            self.probation_cache.remove(key)
+            self.protected_cache.set(key, value)
+            return value
         return None
 
     def remove(self, key: str) -> None:

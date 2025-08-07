@@ -8,7 +8,8 @@
 # (from https://highscalability.com/design-of-a-modern-cache/)
 # https://dev.to/epam_india_python/efficient-frequency-estimation-with-count-min-sketch-a-memory-saving-approach-in-python-ih5#problems-in-cm-sketch
 
-from collections.abc import Callable, Iterator
+import array
+from collections.abc import Iterator
 
 import mmh3
 
@@ -37,26 +38,30 @@ class CountMinSketch:
         self,
         width: int,
         depth: int = 4,
-        hash_mapper_func: Callable[[str, int, int], Iterator[int]] | None = None,
     ) -> None:
         self.width = width
         self.depth = depth
-        self.table = [[0] * self.width for _ in range(self.depth)]
-        self.hash_mapper_func = hash_mapper_func if hash_mapper_func else hash_mmh3
+        # Count-Min Sketch values are always non-negative integers
+        # Overflow is unlikely - unsigned 32-bit int max (4.2 billion)
+        # is sufficient for most use cases
+        # especially that we are doing reset() after `sample` number of requests to cache
+        # width = 10000, depth = 4 - size of list of lists of 0 - 320344
+        # size of list of array.array is 160408
+        self.table = [array.array("I", [0] * width) for _ in range(depth)]
 
     def update(self, item: str, count: int = 1) -> None:
         """Update the frequency of the item based on the given count."""
-        for column_index, bucket_index in enumerate(self.hash_mapper_func(item, depth=self.depth, width=self.width)):
+        for column_index, bucket_index in enumerate(hash_mmh3(item, depth=self.depth, width=self.width)):
             self.table[column_index][bucket_index] += count
 
     def estimate(self, item: str) -> int:
         """Estimate the frequency of the given item."""
         items = (
             self.table[column_index][bucket_index]
-            for column_index, bucket_index in enumerate(self.hash_mapper_func(item, depth=self.depth, width=self.width))
+            for column_index, bucket_index in enumerate(hash_mmh3(item, depth=self.depth, width=self.width))
         )
         return min(items)
 
     def reset(self) -> None:
         """Reset the count to the starting state."""
-        self.table = [[0] * self.width for _ in range(self.depth)]
+        self.table = [array.array("I", [0] * self.width) for _ in range(self.depth)]
