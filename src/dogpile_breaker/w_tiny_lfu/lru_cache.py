@@ -20,7 +20,7 @@ class LRUCache:
     def __len__(self) -> int:
         return len(self.cache)
 
-    def get(self, key: str) -> Any | None:
+    def get(self, key: str) -> Any:
         if key not in self.cache:
             return None
         # Move to end (most recently used)
@@ -39,7 +39,7 @@ class LRUCache:
             self.cache.pop(key)
         self.cache[key] = value
         # If we're at capacity, remove the least recently used item
-        if len(self.cache) >= self.capacity:
+        if len(self.cache) > self.capacity:
             evicted_key, evicted_value = self.cache.popitem(last=False)
         return evicted_key, evicted_value
 

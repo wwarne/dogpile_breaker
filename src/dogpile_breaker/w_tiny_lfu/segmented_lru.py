@@ -53,18 +53,36 @@ class SLRUCache:
         if key in self.protected_cache:
             self.protected_cache.set(key, value)
         elif key in self.probation_cache:
+            # If a key in the probationary segment is accessed again,
+            # it's considered valuable → it is promoted to the protected segment.
             self.probation_cache.remove(key)
-            self.protected_cache.set(key, value)
+            # If a key in the protected segment is evicted (due to reaching its capacity),
+            # it is demoted back to the probationary segment,
+            # rather than being dropped immediately.
+            evicted_key, evicted_value = self.protected_cache.set(key, value)
+            if evicted_key:
+                self.probation_cache.set(evicted_key, evicted_value)
         else:
+            # New keys go into the probationary segment.
             self.probation_cache.set(key, value)
 
-    def get(self, key: str) -> Any | None:
+    def get(self, key: str) -> Any:
         if key in self.protected_cache:
             return self.protected_cache.get(key)
         if key in self.probation_cache:
+            # Any successful access (get or set)
+            # to a key in the probationary segment implies
+            # "this key is worth keeping longer" →
+            # so you promote it into the protected segment.
+
             value = self.probation_cache.get(key)
             self.probation_cache.remove(key)
-            self.protected_cache.set(key, value)
+            # If a key in the protected segment is evicted (due to reaching its capacity),
+            # it is demoted back to the probationary segment,
+            # rather than being dropped immediately.
+            evicted_key, evicted_value = self.protected_cache.set(key, value)
+            if evicted_key:
+                self.probation_cache.set(evicted_key, evicted_value)
             return value
         return None
 
@@ -74,7 +92,7 @@ class SLRUCache:
         if key in self.probation_cache:
             self.probation_cache.remove(key)
 
-    def get_victim(self) -> Any | None:
+    def get_victim(self) -> str | None:
         """Get the last key in the cache. Cache is ordered following the SLRU scheme."""
         if len(self) >= self.total_capacity:
             return self.probation_cache.get_victim()

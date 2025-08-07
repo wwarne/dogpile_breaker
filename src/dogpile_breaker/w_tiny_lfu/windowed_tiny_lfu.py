@@ -61,40 +61,37 @@ class WTinyLFU:
 
     def __setitem__(self, key: str, value: Any) -> None:
         # after a fixed number of insertions (sample size),
-        # halve all counters to decay history over time, as described in the TinyLFU paper
-        # But actually clear half of Count-Min Sketch and BloomFilter is pretty hard
-        # So I just reset them
+        # halve all counters to decay history over time,
+        # as described in the TinyLFU paper
         self.age += 1
         if self.age >= self.sample:
-            self.bouncer.reset()
+            self.bouncer.halve_counters()
             self.doorkeeper.reset()
             self.age = 0
+        # Step 1: Update frequency
         self.bouncer.update(key)
-
+        # Step 2: If key is already in main cache, refresh it
         if key in self.main_cache:
-            self.main_cache.remove(key)
-        # promote to window cache and
-        # grab the value which was removed from window_cache to put our new key/value pair
+            self.main_cache.set(key, value)
+            return
+
+        # Step 3: Check Doorkeeper (Bloom filter)
+        if not self.doorkeeper.allow(key):
+            return
+        # Step 4: Admit to window cache
         evicted_key, evicted_value = self.window_cache.set(key, value)
         if not evicted_key:
             return
-
-        # If we return evicted key to main_cache - we can evict something from there
-        # So we need to compare probabilities for both keys and save the better one
-        # victim - is a last key in main_cache if it's full. It will be overriden
-        # if we save our evicted_key.
-
+        # Step 5: Evicted candidate from window — consider for main cache
         victim_key = self.main_cache.get_victim()
         if not victim_key:
+            # SLRU has space — admit unconditionally
             self.main_cache.set(evicted_key, evicted_value)
             return
-
-        if not self.doorkeeper.allow(evicted_key):
-            return
-
+        # Step 6: Compare frequencies (TinyLFU admission)
         victim_count = self.bouncer.estimate(victim_key)
-        item_count = self.bouncer.estimate(evicted_key)
-        if victim_count < item_count:
+        evicted_item_count = self.bouncer.estimate(evicted_key)
+        if victim_count < evicted_item_count:
             self.main_cache.set(evicted_key, evicted_value)
         else:
             return

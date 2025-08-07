@@ -62,6 +62,8 @@ class CountMinSketch:
         )
         return min(items)
 
-    def reset(self) -> None:
-        """Reset the count to the starting state."""
-        self.table = [array.array("I", [0] * self.width) for _ in range(self.depth)]
+    def halve_counters(self) -> None:
+        """Halve the frequency of each bucket."""
+        for row in self.table:
+            for i in range(len(row)):
+                row[i] //= 2
