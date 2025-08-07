@@ -26,7 +26,10 @@ class WTinyLFU:
 
         # To track access frequencies efficiently,
         # TinyLFU uses a Count-Min Sketch (CMS), a probabilistic data structure
-        self.bouncer = CountMinSketch(size)
+        # In Caffeine (Java), the default depth = 4 (~98% confidence).
+        # In ScyllaDB, depth = 5 or 6 depending on workload sensitivity.
+        # More depth - more hashes we need to count
+        self.bouncer = CountMinSketch(width=size, depth=4)
         # A Bloom Filter variant used to filter one-time accesses.
         # Instead of counting every new access, TinyLFU uses the Doorkeeper
         # to decide if the item should be counted at all.
