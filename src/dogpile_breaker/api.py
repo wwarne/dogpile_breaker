@@ -461,7 +461,7 @@ class CacheRegion:
             caching_dec_impl.save_to_cache = save_to_cache  # type: ignore[attr-defined]
             return cast("CachedFuncWithMethods[P, R]", caching_dec_impl)
 
-        return cast("CachingDecorator", decorator)
+        return decorator
 
     async def direct_save_to_cache(self, key: str, value: ValuePayload, ttl_sec: int, jitter_func: JitterFunc) -> None:
         """

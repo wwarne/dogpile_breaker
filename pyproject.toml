@@ -1,6 +1,6 @@
 [project]
 name = "dogpile_breaker"
-version = "0.12.0"
+version = "0.13.0"
 description = "Cache for Asyncio Applications with Anti-Dogpile Effect"
 readme = "README.md"
 authors = [
@@ -10,7 +10,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "async-timeout>=5.0.1 ; python_full_version < '3.11.3'",
-    "redis>=5.1",
+    "redis>=5.3",
     "typing-extensions>=4.12.2",
 ]
 
@@ -23,8 +23,8 @@ metrics = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.7,<0.9.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
@@ -32,6 +32,7 @@ dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.3",
     "ruff>=0.8.3",
+    "types-redis>=4.6.0.20241004",
 ]
 
 [tool.ruff]
