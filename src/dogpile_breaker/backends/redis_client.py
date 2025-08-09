@@ -22,7 +22,7 @@ _ConnectionT = TypeVar("_ConnectionT", bound=AbstractConnection)
 Unused: TypeAlias = object
 
 
-class AsyncRedisClient(Redis):  # type:ignore[type-arg]
+class AsyncRedisClient(Redis):
     # Note - mypy throws error - Call to untyped function "execute_command" in typed context
     @override
     async def execute_command(self, *args: Any, **options: Any) -> Any:
@@ -37,7 +37,7 @@ class AsyncRedisClient(Redis):  # type:ignore[type-arg]
             raise CacheBackendInteractionError from e
 
 
-class SentinelBlockingPool(SentinelConnectionPool):  # type:ignore[type-arg]
+class SentinelBlockingPool(SentinelConnectionPool):
     """
     It performs the same function as the default
     `redis.asyncio.SentinelConnectionPool` implementation, in that,
@@ -58,22 +58,22 @@ class SentinelBlockingPool(SentinelConnectionPool):  # type:ignore[type-arg]
 
     def __init__(self, service_name: str, sentinel_manager: Sentinel, **kwargs: Any) -> None:
         self.timeout = kwargs.pop("timeout", 20)
-        super().__init__(service_name, sentinel_manager, **kwargs)
+        super().__init__(service_name, sentinel_manager, **kwargs)  # type:ignore[no-untyped-call]
         self._condition = asyncio.Condition()
 
-    async def get_connection(self, command_name: Unused, *keys: Unused, **options: Unused) -> _ConnectionT:  # noqa: ARG002
+    async def get_connection(self, command_name: Any = ..., *keys: Any, **options: Any) -> _ConnectionT:  # noqa: ARG002
         """Gets a connection from the pool, blocking until one is available"""
         try:
             async with self._condition:  # noqa: SIM117
                 async with async_timeout(self.timeout):
-                    await self._condition.wait_for(self.can_get_connection)  # type:ignore[attr-defined]
-                    connection = super().get_available_connection()  # type:ignore[misc]
+                    await self._condition.wait_for(self.can_get_connection)
+                    connection = super().get_available_connection()  # type:ignore[no-untyped-call]
         except asyncio.TimeoutError as err:
             raise ConnectionError("No connection available.") from err  # noqa: EM101, TRY003
 
         # We now perform the connection check outside of the lock.
         try:
-            await self.ensure_connection(connection)  # type:ignore[attr-defined]
+            await self.ensure_connection(connection)
         except BaseException:
             await self.release(connection)
             raise
