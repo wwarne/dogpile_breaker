@@ -58,12 +58,13 @@ class WindowedTinyLFU:
         self[key] = value
 
     def __getitem__(self, key: str) -> Any:
-        self.bouncer.update(key)
         value = self.window_cache.get(key)
         if value:
+            self.bouncer.update(key)
             return value
         value = self.main_cache.get(key)
         if value:
+            self.bouncer.update(key)
             return value
         return None
 
@@ -97,7 +98,9 @@ class WindowedTinyLFU:
         # Step 6: Compare frequencies (TinyLFU admission)
         victim_count = self.bouncer.estimate(victim_key)
         evicted_item_count = self.bouncer.estimate(evicted_key)
-        if victim_count < evicted_item_count:
+        # tie-breaking toward new items
+        # (so if they have same frequency - choose the newest one)
+        if evicted_item_count >= victim_count:
             self.main_cache.set(evicted_key, evicted_value)
         else:
             return
@@ -160,18 +163,18 @@ class WindowedTinyLFUTTL:
         return value if value is not None else default
 
     def __getitem__(self, key: str) -> Any:
-        self.bouncer.update(key)
         expired_at = self.store_meta.get(key, None)
         if expired_at is not None and expired_at < time.monotonic():
             # expired - remove
             self.remove(key)
             return None
-
         value = self.window_cache.get(key)
         if value:
+            self.bouncer.update(key)
             return value
         value = self.main_cache.get(key)
         if value:
+            self.bouncer.update(key)
             return value
         return None
 
@@ -215,6 +218,7 @@ class WindowedTinyLFUTTL:
         expire_at = self.store_meta.get(evicted_key)
         if expire_at is not None and expire_at < time.monotonic():
             # evicted key is expired so no need to promote it back to main_cache
+            self.store_meta.pop(evicted_key, None)
             return
 
         # Step 6: Evicted candidate from window — consider for main cache
@@ -227,8 +231,9 @@ class WindowedTinyLFUTTL:
         # Step 7: Compare frequencies (TinyLFU admission)
         victim_count = self.bouncer.estimate(victim_key)
         evicted_item_count = self.bouncer.estimate(evicted_key)
-        if victim_count < evicted_item_count:
+        if evicted_item_count >= victim_count:
             self.main_cache.set(evicted_key, evicted_value)
+            self.store_meta.pop(victim_key, None)
         else:
             return
 
