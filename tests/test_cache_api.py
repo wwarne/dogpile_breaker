@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 
 from dogpile_breaker import CacheRegion
-from dogpile_breaker.api import CachedEntry
+from dogpile_breaker.models import CachedEntry
 from tests.helpers import CachedEntryFactory, default_str_deserializer, default_str_serializer, gen_some_key
 from tests.in_memory_backend import InMemoryStorage
 

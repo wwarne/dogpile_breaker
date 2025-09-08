@@ -1,25 +1,18 @@
-__version__ = "0.14.0"
+__version__ = "0.20.0"
 
-from importlib.util import find_spec
 
-from .api import CacheRegion, ShouldCacheFunc, StorageBackend
+from .api import CacheRegion
+from .backends.circut_breaker_fallback_backend import CircuitBreakerFallbackBackend
 from .backends.memory_backend import MemoryBackendLRU
 from .backends.redis_backend import RedisSentinelBackend, RedisStorageBackend
-from .middlewares.base_middleware import StorageBackendMiddleware
-from .middlewares.circut_breaker_fallback_middleware import CircuitBreakerFallbackMiddleware
+from .models import ShouldCacheFunc, StorageBackend
 
 __all__ = [
     "CacheRegion",
-    "CircuitBreakerFallbackMiddleware",
+    "CircuitBreakerFallbackBackend",
     "MemoryBackendLRU",
     "RedisSentinelBackend",
     "RedisStorageBackend",
     "ShouldCacheFunc",
     "StorageBackend",
-    "StorageBackendMiddleware",
 ]
-
-if find_spec("prometheus_client"):
-    from .middlewares.prometheus_middleware import PrometheusMiddleware
-
-    __all__ += ["PrometheusMiddleware"]

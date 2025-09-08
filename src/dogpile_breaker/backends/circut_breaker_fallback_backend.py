@@ -3,14 +3,13 @@ import time
 import typing
 from enum import Enum
 
-from typing_extensions import assert_never, override
+from typing_extensions import assert_never
 
 from dogpile_breaker.backends.memory_backend import MemoryBackendLRU
 from dogpile_breaker.exceptions import CacheBackendInteractionError
-from dogpile_breaker.middlewares.base_middleware import StorageBackendMiddleware
 
 if typing.TYPE_CHECKING:
-    from dogpile_breaker.api import StorageBackend
+    from dogpile_breaker.models import StorageBackend
 
 P = typing.ParamSpec("P")  # function parameters
 R = typing.TypeVar("R")  # function return value
@@ -22,9 +21,9 @@ class CircuitState(Enum):
     HALF_OPEN = "half_open"  # Testing if Redis is available again
 
 
-class CircuitBreakerFallbackMiddleware(StorageBackendMiddleware):
+class CircuitBreakerFallbackBackend:
     """
-    Circut Breaker + fallback middleware (in-memory by default).
+    Circut Breaker + fallback backend (in-memory by default).
 
     - CLOSED: all ops go to default storage (usually Redis); Failures count up
     - OPEN: all ops go straight to fallback_storage until timeout
@@ -33,6 +32,7 @@ class CircuitBreakerFallbackMiddleware(StorageBackendMiddleware):
 
     def __init__(
         self,
+        primary_storage: "StorageBackend",
         fallback_storage: typing.Optional["StorageBackend"] = None,
         failure_threshold: int = 5,
         cooldown_seconds: float = 30.0,
@@ -40,11 +40,11 @@ class CircuitBreakerFallbackMiddleware(StorageBackendMiddleware):
     ) -> None:
         if fallback_storage is None:
             fallback_storage = MemoryBackendLRU()
+        self.primary_storage = primary_storage
         self.fallback = fallback_storage
         self.failure_threshold = failure_threshold
         self.cooldown_seconds = cooldown_seconds
         self.success_threshold = success_threshold
-
         # Circut state
         self.failure_count = 0
         self.success_count = 0
@@ -52,16 +52,6 @@ class CircuitBreakerFallbackMiddleware(StorageBackendMiddleware):
         self.last_failure_time = 0.0
         # Lock to protect all state transitions
         self.lock = asyncio.Lock()
-
-    @override
-    async def initialize(self) -> None:
-        await self.proxied.initialize()
-        await self.fallback.initialize()
-
-    @override
-    async def aclose(self) -> None:
-        await self.proxied.aclose()
-        await self.fallback.aclose()
 
     async def record_failure(self) -> None:
         async with self.lock:
@@ -125,45 +115,48 @@ class CircuitBreakerFallbackMiddleware(StorageBackendMiddleware):
             # when Circut Breaker is in OPEN state - we should use fallback storage
             return await func_fallback(*args, **kwargs)
 
-    @override
+    async def initialize(self) -> None:
+        await self.primary_storage.initialize()
+        await self.fallback.initialize()
+
+    async def aclose(self) -> None:
+        await self.primary_storage.aclose()
+        await self.fallback.aclose()
+
     async def get_serialized(self, key: str) -> bytes | None:
         return await self._call_with_circuit(
-            func_original=self.proxied.get_serialized,
+            func_original=self.primary_storage.get_serialized,
             func_fallback=self.fallback.get_serialized,
             key=key,
         )
 
-    @override
     async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
         return await self._call_with_circuit(
-            func_original=self.proxied.set_serialized,
+            func_original=self.primary_storage.set_serialized,
             func_fallback=self.fallback.set_serialized,
             key=key,
             value=value,
             ttl_sec=ttl_sec,
         )
 
-    @override
     async def delete(self, key: str) -> None:
         return await self._call_with_circuit(
-            func_original=self.proxied.delete,
+            func_original=self.primary_storage.delete,
             func_fallback=self.fallback.delete,
             key=key,
         )
 
-    @override
     async def try_lock(self, key: str, lock_period_sec: int) -> bool:
         return await self._call_with_circuit(
-            func_original=self.proxied.try_lock,
+            func_original=self.primary_storage.try_lock,
             func_fallback=self.fallback.try_lock,
             key=key,
             lock_period_sec=lock_period_sec,
         )
 
-    @override
     async def unlock(self, key: str) -> None:
         return await self._call_with_circuit(
-            func_original=self.proxied.unlock,
+            func_original=self.primary_storage.unlock,
             func_fallback=self.fallback.unlock,
             key=key,
         )

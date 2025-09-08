@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from dogpile_breaker.api import CachedEntry
 from dogpile_breaker.exceptions import CantDeserializeError
+from dogpile_breaker.models import CachedEntry
 
 
 # Example serializer and deserializer for testing

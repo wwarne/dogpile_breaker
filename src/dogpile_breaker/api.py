@@ -1,101 +1,32 @@
 import asyncio
 import functools
-import json
 import random
 import sys
 import time
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, ParamSpec, TypeAlias, TypeVar, cast
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
-from typing_extensions import Protocol, Self
+from typing_extensions import Self
 
-from .exceptions import CantDeserializeError
-from .middlewares.base_middleware import StorageBackendMiddleware
+from .models import (
+    CachedEntry,
+    CachedFuncWithMethods,
+    CachingDecorator,
+    Deserializer,
+    JitterFunc,
+    KeyGeneratorFunc,
+    P,
+    R,
+    Serializer,
+    ShouldCacheFunc,
+    StorageBackend,
+    ValuePayload,
+)
 
 if sys.version_info >= (3, 11, 3):
     from asyncio import timeout  # type: ignore[attr-defined,import-not-found,no-redef,unused-ignore]
 else:
     from async_timeout import timeout  # type: ignore[import-not-found,no-redef,unused-ignore]
-
-ValuePayload: TypeAlias = Any
-Serializer = Callable[[ValuePayload], bytes]
-Deserializer = Callable[[bytes], ValuePayload]
-JitterFunc: TypeAlias = Callable[[int], int]
-AsyncFunc = TypeVar("AsyncFunc", bound=Callable[..., Awaitable[Any]])
-P = ParamSpec("P")  # function parameters
-R = TypeVar("R")  # function return value
-
-
-class ShouldCacheFunc(Protocol):
-    def __call__(self, source_args: tuple[Any], source_kwargs: dict[str, Any], result: Any) -> bool:
-        """Receives source arguments and results and returns whether it should cached."""
-
-
-class KeyGeneratorFunc(Protocol):
-    def __call__(self, fn: AsyncFunc, *args: Any, **kwargs: Any) -> str:
-        """Receives function and its parameters and returns its key for caching."""
-
-
-class StorageBackend(Protocol):
-    async def initialize(self) -> None:
-        """Some operation after creating the instance."""
-
-    async def aclose(self) -> None:
-        """Close the resources (connections, clients, etc.)"""
-
-    async def get_serialized(self, key: str) -> bytes | None:
-        """Reads cached data from storage."""
-
-    async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
-        """Saves bytes into storage backend."""
-
-    async def delete(self, key: str) -> None:
-        """Deletes cached data from storage."""
-
-    async def try_lock(self, key: str, lock_period_sec: int) -> bool:
-        """Returns True if successfully acquired lock, False otherwise. Should not wait for lock."""
-
-    async def unlock(self, key: str) -> None:
-        """Releases lock."""
-
-
-class CachedFuncWithMethods(Protocol[P, R]):
-    async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
-    async def call_without_cache(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
-    async def save_to_cache(self, _result: R, *args: P.args, **kwargs: P.kwargs) -> None: ...
-
-
-class CachingDecorator(Protocol):
-    def __call__(self, func: Callable[P, Awaitable[R]]) -> CachedFuncWithMethods[P, R]: ...
-
-
-@dataclass
-class CachedEntry:
-    # What we actually store in cache is this class
-    payload: ValuePayload
-    expiration_timestamp: int | float
-
-    def to_bytes(self, serializer: Serializer) -> bytes:
-        # convert data to bytes so it can be stored in cache backend.
-        # metadata is serialized with standard `json` module
-        # so the user only should write serializer and deserializer for its own data stored in `payload`
-        main_data_bytes = serializer(self.payload)
-        metadata_bytes = json.dumps({"expiration_timestamp": self.expiration_timestamp}, ensure_ascii=False).encode()
-        return b"%b|%b" % (main_data_bytes, metadata_bytes)
-
-    @classmethod
-    def from_bytes(cls, data: bytes | None, deserializer: Deserializer) -> Self | None:
-        if not data:
-            return None
-        bytes_payload, _, bytes_metadata = data.partition(b"|")
-        metadata = json.loads(bytes_metadata)
-        try:
-            payload = deserializer(bytes_payload)
-        except Exception as e:
-            raise CantDeserializeError(e) from e
-        else:
-            return cls(payload=payload, **metadata)
 
 
 def full_jitter(value: int) -> int:
@@ -111,8 +42,8 @@ def full_jitter(value: int) -> int:
 class CacheRegion:
     def __init__(
         self,
-        serializer: Callable[[ValuePayload], bytes],
-        deserializer: Callable[[bytes], ValuePayload],
+        serializer: Serializer,
+        deserializer: Deserializer,
     ) -> None:
         self.serializer = serializer
         self.deserializer = deserializer
@@ -124,27 +55,10 @@ class CacheRegion:
         self,
         backend_class: type[StorageBackend],
         backend_arguments: dict[str, Any],
-        middlewares: Sequence[StorageBackendMiddleware | type[StorageBackendMiddleware]] = (),
     ) -> Self:
         self.backend_storage = backend_class(**backend_arguments)
-        for wrapper in reversed(middlewares):
-            self.wrap(wrapper)
-        # Call initialize after wrapping middleware
-        # So every middleware
         await self.backend_storage.initialize()
         return self
-
-    def wrap(self, middleware: StorageBackendMiddleware | type[StorageBackendMiddleware]) -> None:
-        """Takes a StorageBackendMiddleware instance or class and wraps the attached backend."""
-
-        # if we were passed a type rather than an instance then
-        # initialize it.
-        middleware_instance = middleware() if isinstance(middleware, type) else middleware
-
-        if not isinstance(middleware_instance, StorageBackendMiddleware):
-            raise TypeError(f"{middleware_instance} is not a valid StorageBackendMiddleware")  # noqa: EM102,TRY003
-
-        self.backend_storage = middleware_instance.wrap(self.backend_storage)
 
     async def aclose(self) -> None:
         await self.backend_storage.aclose()

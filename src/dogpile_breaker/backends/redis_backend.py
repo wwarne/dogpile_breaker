@@ -8,7 +8,8 @@ from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from .redis_client import AsyncRedisClient, SentinelBlockingPool
+from dogpile_breaker.backends.redis_client import AsyncRedisClient, SentinelBlockingPool
+from dogpile_breaker.models import CachedEntry, Deserializer, Serializer
 
 
 def double_ttl(value: int) -> int:
@@ -106,6 +107,20 @@ class RedisStorageBackend:
 
     async def delete(self, key: str) -> None:
         await self.redis.delete(key)
+
+    async def get_cached_entry(self, key: str, deserializer: Deserializer) -> CachedEntry | None:
+        data = await self.get_serialized(key)
+        return CachedEntry.from_bytes(
+            data=data,
+            deserializer=deserializer,
+        )
+
+    async def set_cached_entry(self, key: str, value: CachedEntry, serializer: Serializer, ttl_sec: int) -> None:
+        await self.set_serialized(
+            key=key,
+            value=value.to_bytes(serializer=serializer),
+            ttl_sec=ttl_sec,
+        )
 
 
 class RedisSentinelBackend(RedisStorageBackend):
