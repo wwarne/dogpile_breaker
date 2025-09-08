@@ -2,6 +2,8 @@ import asyncio
 import time
 from collections import OrderedDict
 
+from dogpile_breaker.models import CachedEntry, Deserializer, Serializer
+
 
 class MemoryBackendLRU:
     """
@@ -85,3 +87,17 @@ class MemoryBackendLRU:
 
     async def unlock(self, key: str) -> None:  # noqa: ARG002
         return
+
+    async def get_cached_entry(self, key: str, deserializer: Deserializer) -> CachedEntry | None:
+        data = await self.get_serialized(key)
+        return CachedEntry.from_bytes(
+            data=data,
+            deserializer=deserializer,
+        )
+
+    async def set_cached_entry(self, key: str, value: CachedEntry, serializer: Serializer, ttl_sec: int) -> None:
+        await self.set_serialized(
+            key=key,
+            value=value.to_bytes(serializer=serializer),
+            ttl_sec=ttl_sec,
+        )

@@ -2,7 +2,7 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from dogpile_breaker.api import CachedEntry
+from dogpile_breaker.models import CachedEntry
 
 
 def default_str_serializer(data: str) -> bytes:
