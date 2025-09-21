@@ -6,11 +6,14 @@ This module contains classes that are imported by multiple modules to avoid circ
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, ParamSpec, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeAlias, TypeVar
 
 from typing_extensions import Protocol, Self
 
 from dogpile_breaker.exceptions import CantDeserializeError
+
+if TYPE_CHECKING:
+    from .monitoring import DogpileMetrics
 
 # Type aliases for better code readability
 ValuePayload: TypeAlias = Any
@@ -71,7 +74,7 @@ class CachedEntry:
 
 
 class StorageBackend(Protocol):
-    async def initialize(self) -> None:
+    async def initialize(self, metrics: "DogpileMetrics", region_name: str) -> None:
         """Some operation after creating the instance."""
 
     async def aclose(self) -> None:

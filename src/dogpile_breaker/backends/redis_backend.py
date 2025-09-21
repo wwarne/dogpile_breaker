@@ -9,7 +9,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from dogpile_breaker.backends.redis_client import AsyncRedisClient, SentinelBlockingPool
-from dogpile_breaker.models import CachedEntry, Deserializer, Serializer
+from dogpile_breaker.monitoring import DogpileMetrics, timer_ctx
 
 
 def double_ttl(value: int) -> int:
@@ -59,9 +59,14 @@ class RedisStorageBackend:
             connection_pool=self.pool,
         )
         self.redis_expiration_func = redis_expiration_func
+        self.metrics: DogpileMetrics
+        self.name = "RedisStorageBackend"
+        self.region_name: str
 
-    async def initialize(self) -> None:
+    async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:
         _ = await self.redis.initialize()
+        self.metrics = metrics
+        self.region_name = region_name
 
     async def aclose(self) -> None:
         # https://github.com/redis/redis-py/issues/2995#issuecomment-1764876240
@@ -71,7 +76,17 @@ class RedisStorageBackend:
         await self.pool.aclose()
 
     async def get_serialized(self, key: str) -> bytes | None:
-        return cast("bytes | None", await self.redis.get(key))
+        with timer_ctx(
+            self.metrics.backend_latency,
+            {"region_name": self.region_name, "storage_name": self.name, "operation": "read"},
+        ):
+            try:
+                return cast("bytes | None", await self.redis.get(key))
+            except Exception:
+                self.metrics.backend_errors.labels(
+                    region_name=self.region_name, storage=self.name, operation="read"
+                ).inc()
+                raise
 
     async def set_serialized(self, key: str, value: bytes, ttl_sec: int) -> None:
         # We store the validity time of the data itself inside the `value`,
@@ -81,7 +96,19 @@ class RedisStorageBackend:
         # because then the cache will keep growing until the memory runs out,
         # and you'll need to implement your own garbage collection algorithms.
         expiration_time = self.redis_expiration_func(ttl_sec)
-        await self.redis.set(name=key, value=value, ex=expiration_time)
+        with timer_ctx(
+            self.metrics.backend_latency,
+            {"region_name": self.region_name, "storage_name": self.name, "operation": "write"},
+        ):
+            try:
+                await self.redis.set(name=key, value=value, ex=expiration_time)
+            except Exception:
+                self.metrics.backend_errors.labels(
+                    region_name=self.region_name,
+                    storage=self.name,
+                    operation="write",
+                ).inc()
+                raise
 
     async def try_lock(self, key: str, lock_period_sec: int) -> bool:
         # This lock is not very precise
@@ -108,20 +135,6 @@ class RedisStorageBackend:
     async def delete(self, key: str) -> None:
         await self.redis.delete(key)
 
-    async def get_cached_entry(self, key: str, deserializer: Deserializer) -> CachedEntry | None:
-        data = await self.get_serialized(key)
-        return CachedEntry.from_bytes(
-            data=data,
-            deserializer=deserializer,
-        )
-
-    async def set_cached_entry(self, key: str, value: CachedEntry, serializer: Serializer, ttl_sec: int) -> None:
-        await self.set_serialized(
-            key=key,
-            value=value.to_bytes(serializer=serializer),
-            ttl_sec=ttl_sec,
-        )
-
 
 class RedisSentinelBackend(RedisStorageBackend):
     def __init__(
@@ -146,14 +159,19 @@ class RedisSentinelBackend(RedisStorageBackend):
         self.redis: AsyncRedisClient
         self.master_name = master_name
         self.redis_expiration_func = redis_expiration_func
+        self.metrics: DogpileMetrics
+        self.name = "RedisSentinelBackend"
+        self.region_name: str
 
-    async def initialize(self) -> None:
+    async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:
         self.redis = self.sentinel.master_for(
             self.master_name,
             redis_class=AsyncRedisClient,
             connection_pool_class=SentinelBlockingPool,
         )  # makes a connection
         _ = await self.redis.initialize()
+        self.metrics = metrics
+        self.region_name = region_name
 
     async def aclose(self) -> None:
         # then using sentinel.master_for

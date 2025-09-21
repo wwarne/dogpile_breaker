@@ -2,6 +2,8 @@ import asyncio
 import time
 from typing import Any
 
+from dogpile_breaker.monitoring import DogpileMetrics
+
 
 class InMemoryStorage:
     """
@@ -19,7 +21,7 @@ class InMemoryStorage:
         self._set_serialized_called_num = 0
         self._try_lock_called_num = 0
 
-    async def initialize(self) -> None:
+    async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:  # noqa:ARG002
         return None
 
     async def aclose(self) -> None:

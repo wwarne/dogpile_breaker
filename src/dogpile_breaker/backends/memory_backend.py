@@ -3,6 +3,7 @@ import time
 from collections import OrderedDict
 
 from dogpile_breaker.models import CachedEntry, Deserializer, Serializer
+from dogpile_breaker.monitoring import DogpileMetrics
 
 
 class MemoryBackendLRU:
@@ -24,10 +25,12 @@ class MemoryBackendLRU:
         self._check_interval = check_interval
         self._lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task[None] | None = None
+        self.region_name: str
 
-    async def initialize(self) -> None:
+    async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:  # noqa:ARG002
         if self._check_interval:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
+        self.region_name = region_name
 
     async def aclose(self) -> None:
         if self._cleanup_task:

@@ -10,6 +10,7 @@ from dogpile_breaker.exceptions import CacheBackendInteractionError
 
 if typing.TYPE_CHECKING:
     from dogpile_breaker.models import StorageBackend
+    from dogpile_breaker.monitoring import DogpileMetrics
 
 P = typing.ParamSpec("P")  # function parameters
 R = typing.TypeVar("R")  # function return value
@@ -38,10 +39,8 @@ class CircuitBreakerFallbackBackend:
         cooldown_seconds: float = 30.0,
         success_threshold: int = 3,
     ) -> None:
-        if fallback_storage is None:
-            fallback_storage = MemoryBackendLRU()
         self.primary_storage = primary_storage
-        self.fallback = fallback_storage
+        self.fallback = fallback_storage or MemoryBackendLRU()
         self.failure_threshold = failure_threshold
         self.cooldown_seconds = cooldown_seconds
         self.success_threshold = success_threshold
@@ -52,6 +51,8 @@ class CircuitBreakerFallbackBackend:
         self.last_failure_time = 0.0
         # Lock to protect all state transitions
         self.lock = asyncio.Lock()
+        self.metrics: DogpileMetrics
+        self.region_name: str
 
     async def record_failure(self) -> None:
         async with self.lock:
@@ -61,9 +62,14 @@ class CircuitBreakerFallbackBackend:
                 self.last_failure_time = time.time()
                 if self.failure_count >= self.failure_threshold:
                     self.state = CircuitState.OPEN
+                    self.metrics.cb_state.labels(region_name=self.region_name).set(1.0)
+                    self.metrics.cb_open.labels(region_name=self.region_name).inc()
             elif self.state == CircuitState.HALF_OPEN:
                 # In half-open state any failure sends us back to open
                 self.state = CircuitState.OPEN
+                self.metrics.cb_state.labels(region_name=self.region_name).set(1.0)
+                self.metrics.cb_open.labels(region_name=self.region_name).inc()
+
                 self.last_failure_time = time.time()
 
     async def record_success(self) -> None:
@@ -75,6 +81,8 @@ class CircuitBreakerFallbackBackend:
                 if self.success_count >= self.success_threshold:
                     self.state = CircuitState.CLOSED
                     self.failure_count = 0
+                    self.metrics.cb_state.labels(region_name=self.region_name).set(0)
+                    self.metrics.cb_close.labels(region_name=self.region_name).inc()
 
     async def should_use_main(self) -> bool:
         async with self.lock:
@@ -86,6 +94,7 @@ class CircuitBreakerFallbackBackend:
                 if cooldown_elapsed:
                     # Transition to half-open state to test backend
                     self.state = CircuitState.HALF_OPEN
+                    self.metrics.cb_state.labels(region_name=self.region_name).set(2)
                     self.success_count = 0
                     return True
                 return False
@@ -115,9 +124,11 @@ class CircuitBreakerFallbackBackend:
             # when Circut Breaker is in OPEN state - we should use fallback storage
             return await func_fallback(*args, **kwargs)
 
-    async def initialize(self) -> None:
-        await self.primary_storage.initialize()
-        await self.fallback.initialize()
+    async def initialize(self, metrics: "DogpileMetrics", region_name: str) -> None:
+        self.metrics = metrics
+        self.region_name = region_name
+        await self.primary_storage.initialize(metrics=self.metrics, region_name=region_name)
+        await self.fallback.initialize(metrics=self.metrics, region_name=region_name)
 
     async def aclose(self) -> None:
         await self.primary_storage.aclose()

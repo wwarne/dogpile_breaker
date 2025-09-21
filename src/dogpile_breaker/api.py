@@ -22,6 +22,7 @@ from .models import (
     StorageBackend,
     ValuePayload,
 )
+from .monitoring import DogpileMetrics, timer_ctx
 
 if sys.version_info >= (3, 11, 3):
     from asyncio import timeout  # type: ignore[attr-defined,import-not-found,no-redef,unused-ignore]
@@ -44,12 +45,17 @@ class CacheRegion:
         self,
         serializer: Serializer,
         deserializer: Deserializer,
+        region_name: str,
+        stats_enabled: bool,  # noqa:FBT001
     ) -> None:
         self.serializer = serializer
         self.deserializer = deserializer
+        self.region_name = region_name
         self.backend_storage: StorageBackend
         self.awaits: dict[str, asyncio.Future[Any]] = {}
         self.default_jitter_fn = full_jitter
+        self.stats_enabled = stats_enabled
+        self.metrics = DogpileMetrics(enabled=stats_enabled)
 
     async def configure(
         self,
@@ -57,7 +63,7 @@ class CacheRegion:
         backend_arguments: dict[str, Any],
     ) -> Self:
         self.backend_storage = backend_class(**backend_arguments)
-        await self.backend_storage.initialize()
+        await self.backend_storage.initialize(metrics=self.metrics, region_name=self.region_name)
         return self
 
     async def aclose(self) -> None:
@@ -159,6 +165,7 @@ class CacheRegion:
         # We store the entry itself longer than its TTL so that during a high influx of requests,
         # we can serve slightly outdated data while one process updates the data,
         # rather than forcing everyone to wait.
+        self.metrics.cache_hits.labels(region_name=self.region_name).inc()
         is_outdated = time.time() > data_from_cache.expiration_timestamp
         if not is_outdated:
             # Everything is great, the data is up-to-date, return it.
@@ -176,7 +183,18 @@ class CacheRegion:
             # and another request will attempt to update the data.
             # This will continue until the data is updated or until Redis remove the record,
             # and subsequent requests will follow the 'non_existed_cache_handler()' path.
-            result = await generate_func(*generate_func_args, **generate_func_kwargs)
+            self.metrics.generation_calls.labels(region_name=self.region_name, func_name=generate_func.__name__).inc()
+            with timer_ctx(
+                self.metrics.generation_latency, {"region_name": self.region_name, "func_name": generate_func.__name__}
+            ):
+                try:
+                    result = await generate_func(*generate_func_args, **generate_func_kwargs)
+                except Exception:
+                    self.metrics.generation_errors.labels(
+                        region_name=self.region_name, func_name=generate_func.__name__
+                    ).inc()
+                    await self.backend_storage.unlock(key)
+                    raise
             # If we have a should_cache_fn function,
             # we use it to check whether the result should be saved in the cache
             # (for example, we might not want to do this under certain conditions
@@ -195,6 +213,7 @@ class CacheRegion:
             return result
         # We couldn't acquire the lock, meaning another process is updating the data.
         # In the meantime, we return outdated data to avoid making the clients wait.
+        self.metrics.cache_stale_served.labels(region_name=self.region_name).inc()
         return cast("R", data_from_cache.payload)
 
     async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
@@ -227,6 +246,7 @@ class CacheRegion:
         generate_func_kwargs: dict[str, Any],  # P.kwargs,
         jitter_func: JitterFunc | None,
     ) -> R:
+        self.metrics.cache_misses.labels(region_name=self.region_name).inc()
         # This is the case when there is nothing in the cache.
         # We need to update the data and store it there.
         # Only the process that can acquire the lock will do this,
@@ -235,7 +255,21 @@ class CacheRegion:
             grabbed_lock = await self.backend_storage.try_lock(key, lock_period_sec)
             if grabbed_lock:
                 # The lock was successfully acquired, and this process is responsible for updating the data.
-                result = await generate_func(*generate_func_args, **generate_func_kwargs)
+                with timer_ctx(
+                    self.metrics.generation_latency,
+                    {"region_name": self.region_name, "func_name": generate_func.__name__},
+                ):
+                    self.metrics.generation_calls.labels(
+                        region_name=self.region_name, func_name=generate_func.__name__
+                    ).inc()
+                    try:
+                        result = await generate_func(*generate_func_args, **generate_func_kwargs)
+                    except Exception:
+                        self.metrics.generation_errors.labels(
+                            region_name=self.region_name, func_name=generate_func.__name__
+                        ).inc()
+                        await self.backend_storage.unlock(key)
+                        raise
                 # If we have a should_cache_fn function,
                 # we use it to check whether the result should be saved in the cache
                 # (for example, we might not want to do this under certain conditions
@@ -260,6 +294,7 @@ class CacheRegion:
             # read the data from the cache (which will be None), exit this loop,
             # and enter a new iteration of the outer while loop,
             # where we will try to acquire the lock again, calculate, and write the data to the cache.
+            self.metrics.cache_herd_waited.labels(region_name=self.region_name).inc()
             data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
