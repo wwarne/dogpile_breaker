@@ -24,7 +24,7 @@ class CircuitState(Enum):
 
 class CircuitBreakerFallbackBackend:
     """
-    Circut Breaker + fallback backend (in-memory by default).
+    Circuit Breaker + fallback backend (in-memory by default).
 
     - CLOSED: all ops go to default storage (usually Redis); Failures count up
     - OPEN: all ops go straight to fallback_storage until timeout
