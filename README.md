@@ -280,11 +280,6 @@ It supports optional periodic cleanup of expired entries.
 - **Periodic Cleanup**: If `check_interval` is set, an `asyncio.Task` runs `_periodic_cleanup`, removing expired entries at the interval.
 - **Safety**: All cache operations are guarded by a single `asyncio.Lock`.
 
-### Middlewares
-
-The middleware system was temporarily removed.
-I encountered some issues with it and plan to reimplement it.
-
 ### CircuitBreakerFallbackBackend
 
 `CircuitBreakerFallbackBackend` uses primary and fallback  storage backends 
@@ -319,7 +314,7 @@ def my_deserializer(data: bytes) -> str:
     return data.decode()
 
 async def main():
-    region = CacheRegion(serializer=my_serializer, deserializer=my_deserializer)
+    region = CacheRegion(serializer=my_serializer, deserializer=my_deserializer, region_name='main_region', stats_enabled=False)
     primary = RedisStorageBackend(host='localhost', port=6379)
     fallback = MemoryBackendLRU(max_size=100)
     # Configure CacheRegion with Redis and the circuit breaker middleware
@@ -351,6 +346,59 @@ if __name__ == '__main__':
 
     asyncio.run(main())
 ```
+
+
+
+### Prometheus metrics
+
+While creating CacheRegion you can choose attribute `stats_enabled: bool`.
+
+If enabled=True, initializes real Prometheus metrics.  Otherwise, assigns NoOpMetric instances which .
+
+
+
+#### Metrics Exposed
+
+
+**Cache effectiveness**
+
+dogpile_cache_hits_total{region_name} – Successful cache hits.
+
+dogpile_cache_misses_total{region_name} – Cache misses (regeneration needed).
+
+dogpile_cache_stale_served_total{region_name} – Expired entries served.
+
+dogpile_cache_herd_waited_total{region_name} – Requests delayed by herd protection.
+
+**Regeneration**
+
+dogpile_generation_calls_total{region_name, func_name} – Calls to regenerate data.
+
+dogpile_generation_errors_total{region_name, func_name} – Failures during regeneration.
+
+dogpile_generation_latency_seconds{region_name, func_name} – Histogram of regeneration latency.
+
+**Backend storage**
+
+dogpile_backend_op_latency_seconds{region_name, storage_name, operation} – Histogram of backend operation latency.
+
+dogpile_backend_errors_total{region_name, storage_name, operation} – Backend operation failures.
+
+**Circuit breaker**
+
+dogpile_cb_state{region_name} – Current state (0=closed, 1=open, 2=half-open).
+
+dogpile_cb_open_total{region_name} – Times circuit was opened.
+
+dogpile_cb_close_total{region_name} – Times circuit was closed.
+
+dogpile_cb_fallbacks_total{region_name} – Fallback invocations.
+
+dogpile_cb_fallback_errors_total{region_name, error_type} – Errors during fallback.
+
+Example dashboard - [grafana_dashboard_example.json](grafana_dashboard_example.json)
+
+Go to Dashboards → Import. Paste JSON.  Select your Prometheus datasource. Modify as you wish.
 
 ## License
 
