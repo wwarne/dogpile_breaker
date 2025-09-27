@@ -7,6 +7,7 @@ import pytest_asyncio
 
 from dogpile_breaker import CacheRegion
 from dogpile_breaker.models import CachedEntry
+from dogpile_breaker.monitoring import DogpileMetrics
 from tests.helpers import CachedEntryFactory, default_str_deserializer, default_str_serializer, gen_some_key
 from tests.in_memory_backend import InMemoryStorage
 
@@ -25,6 +26,8 @@ async def preconfigured_cache() -> CacheRegionFixture:
         cache = CacheRegion(
             serializer=default_str_serializer,
             deserializer=default_str_deserializer,
+            region_name="test_region",
+            stats_enabled=False,
         )
         return await cache.configure(backend_class=InMemoryStorage, backend_arguments={"cache_dict": cache_dict or {}})
 
@@ -45,6 +48,8 @@ class ExpensiveFunction(Generic[T]):
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
+
+    __name__ = "ExpensiveFunction"
 
 
 class FakeShouldCacheFunc:
@@ -69,12 +74,14 @@ async def test_configure_call_creates_backend_instance() -> None:
             self.kwargs = kwargs
             self.init_called = False
 
-        async def initialize(self) -> None:
+        async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:  # noqa:ARG002
             self.init_called = True
 
     cache = CacheRegion(
         serializer=default_str_serializer,
         deserializer=default_str_deserializer,
+        region_name="test_region",
+        stats_enabled=False,
     )
     backend_arguments = {
         "foo": "bar",
