@@ -1,13 +1,16 @@
 import contextlib
 import time
+import typing
 from collections.abc import Iterator
 from importlib.util import find_spec
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 PROMETHEUS_AVAILABLE = find_spec("prometheus_client")
 
 if TYPE_CHECKING:
     from prometheus_client import Histogram
+
+_T = TypeVar("_T")
 
 
 class Metric(Protocol):
@@ -35,11 +38,13 @@ class NoOpMetric:
     def set(self, value: float) -> None:  # noqa:ARG002
         return None
 
-class Singleton(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
+
+class Singleton(type, typing.Generic[_T]):
+    _instances: dict["Singleton[_T]", _T] = {}  # noqa:RUF012
+
+    def __call__(cls, *args: typing.Any, **kwargs: typing.Any) -> _T:
         if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+            cls._instances[cls] = super().__call__(*args, **kwargs)
         return cls._instances[cls]
 
 
