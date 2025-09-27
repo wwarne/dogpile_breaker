@@ -84,7 +84,7 @@ class RedisStorageBackend:
                 return cast("bytes | None", await self.redis.get(key))
             except Exception:
                 self.metrics.backend_errors.labels(
-                    region_name=self.region_name, storage=self.name, operation="read"
+                    region_name=self.region_name, storage_name=self.name, operation="read"
                 ).inc()
                 raise
 
@@ -105,7 +105,7 @@ class RedisStorageBackend:
             except Exception:
                 self.metrics.backend_errors.labels(
                     region_name=self.region_name,
-                    storage=self.name,
+                    storage_name=self.name,
                     operation="write",
                 ).inc()
                 raise

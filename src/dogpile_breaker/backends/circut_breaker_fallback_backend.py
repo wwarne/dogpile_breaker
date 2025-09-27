@@ -122,6 +122,7 @@ class CircuitBreakerFallbackBackend:
                 return await func_fallback(*args, **kwargs)
         else:
             # when Circut Breaker is in OPEN state - we should use fallback storage
+            self.metrics.cb_fallbacks.labels(region_name=self.region_name).inc()
             return await func_fallback(*args, **kwargs)
 
     async def initialize(self, metrics: "DogpileMetrics", region_name: str) -> None:
@@ -129,6 +130,7 @@ class CircuitBreakerFallbackBackend:
         self.region_name = region_name
         await self.primary_storage.initialize(metrics=self.metrics, region_name=region_name)
         await self.fallback.initialize(metrics=self.metrics, region_name=region_name)
+        self.metrics.cb_state.labels(region_name=self.region_name).set(0)
 
     async def aclose(self) -> None:
         await self.primary_storage.aclose()
