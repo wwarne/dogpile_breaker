@@ -99,6 +99,11 @@ class CacheRegion:
         :param jitter_func: a function that randomly changes the ttl of a record to achieve more even distribution
         :return:
         """
+        if ttl_sec <= 0:
+            raise RuntimeError(f"ttl_sec must be greater than 0")
+        if lock_period_sec <= 0:
+            raise ValueError("lock_period_sec greater than 0")
+
         # use tmp cached awaitables to avoid thundering herd
         herd_leader = self.awaits.get(key, None)
         if herd_leader is None:

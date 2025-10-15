@@ -60,6 +60,8 @@ class CachedEntry:
         metadata_bytes = json.dumps({"expiration_timestamp": self.expiration_timestamp}, ensure_ascii=False).encode()
         # Use length prefix: [len(data)][data][metadata]
         # 4 bytes for length should be more than enough
+        if len(main_data_bytes) > 2 ** 32 - 1:
+            raise ValueError("Serialized data too large (>4GB)")
         return len(main_data_bytes).to_bytes(NUM_BYTES_FOR_LEN, "big") + main_data_bytes + metadata_bytes
 
     @classmethod
