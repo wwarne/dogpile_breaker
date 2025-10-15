@@ -15,4 +15,4 @@ __all__ = [
     "ShouldCacheFunc",
     "StorageBackend",
 ]
-__version__ = version('dogpile_breaker')
+__version__ = version("dogpile_breaker")

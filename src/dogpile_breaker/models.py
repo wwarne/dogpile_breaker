@@ -6,7 +6,7 @@ This module contains classes that are imported by multiple modules to avoid circ
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Final, ParamSpec, TypeAlias, TypeVar
 
 from typing_extensions import Protocol, Self
 
@@ -23,6 +23,7 @@ JitterFunc: TypeAlias = Callable[[int], int]
 AsyncFunc = TypeVar("AsyncFunc", bound=Callable[..., Awaitable[Any]])
 P = ParamSpec("P")  # function parameters
 R = TypeVar("R")  # function return value
+NUM_BYTES_FOR_LEN: Final[int] = 4
 
 
 class ShouldCacheFunc(Protocol):
@@ -57,13 +58,17 @@ class CachedEntry:
         # so the user only should write serializer and deserializer for its own data stored in `payload`
         main_data_bytes = serializer(self.payload)
         metadata_bytes = json.dumps({"expiration_timestamp": self.expiration_timestamp}, ensure_ascii=False).encode()
-        return b"%b|%b" % (main_data_bytes, metadata_bytes)
+        # Use length prefix: [len(data)][data][metadata]
+        # 4 bytes for length should be more than enough
+        return len(main_data_bytes).to_bytes(NUM_BYTES_FOR_LEN, "big") + main_data_bytes + metadata_bytes
 
     @classmethod
     def from_bytes(cls, data: bytes | None, deserializer: Deserializer) -> Self | None:
-        if not data:
+        if not data or len(data) < NUM_BYTES_FOR_LEN:
             return None
-        bytes_payload, _, bytes_metadata = data.partition(b"|")
+        data_len = int.from_bytes(data[:NUM_BYTES_FOR_LEN], "big")
+        bytes_payload = data[NUM_BYTES_FOR_LEN : NUM_BYTES_FOR_LEN + data_len]
+        bytes_metadata = data[NUM_BYTES_FOR_LEN + data_len :]
         metadata = json.loads(bytes_metadata)
         try:
             payload = deserializer(bytes_payload)
