@@ -147,7 +147,7 @@ def my_deserializer(data: bytes) -> str:
     return data.decode("utf-8")
 
 
-cache_instance = CacheRegion(serializer=my_serializer, deserializer=my_deserializer)
+cache_instance = CacheRegion(serializer=my_serializer, deserializer=my_deserializer, region_name='my_cache', stats_enabled=False)
 
 
 async def expensive_func(sleep_for: int) -> str:
@@ -305,16 +305,20 @@ Calls are routed through the private `_call_with_circuit` helper
 import asyncio
 from dogpile_breaker import CacheRegion, RedisStorageBackend
 from dogpile_breaker.backends.memory_backend import MemoryBackendLRU
-from dogpile_breaker.backends.circut_breaker_fallback_backend import CircuitBreakerFallbackBackend
+from dogpile_breaker.backends.circuit_breaker_fallback_backend import CircuitBreakerFallbackBackend
+
 
 def my_serializer(data: str) -> bytes:
     return data.encode()
 
+
 def my_deserializer(data: bytes) -> str:
     return data.decode()
 
+
 async def main():
-    region = CacheRegion(serializer=my_serializer, deserializer=my_deserializer, region_name='main_region', stats_enabled=False)
+    region = CacheRegion(serializer=my_serializer, deserializer=my_deserializer, region_name='main_region',
+                         stats_enabled=False)
     primary = RedisStorageBackend(host='localhost', port=6379)
     fallback = MemoryBackendLRU(max_size=100)
     # Configure CacheRegion with Redis and the circuit breaker middleware
@@ -339,11 +343,12 @@ async def main():
         generate_func_kwargs={},
     )
 
+
 async def get_f():
     return 'data'
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
     asyncio.run(main())
 ```
 
