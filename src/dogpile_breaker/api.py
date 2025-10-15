@@ -216,7 +216,7 @@ class CacheRegion:
         self.metrics.cache_stale_served.labels(region_name=self.region_name).inc()
         return cast("R", data_from_cache.payload)
 
-    async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
+    async def _check_if_data_appear_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
         """
         This is a coroutine which checks if the data is apper in the cache in case the process refreshing the data
         is not the current one (it could be on another machine for example).
@@ -227,6 +227,8 @@ class CacheRegion:
         try:
             async with timeout(lock_period_sec):
                 while True:
+                    # if _get_from_backend raises an error - don't catch it here
+                    # because it makes no sense to retry or wait for failing data
                     data_from_cache = await self._get_from_backend(key=key)
                     if data_from_cache:
                         return data_from_cache
@@ -295,7 +297,7 @@ class CacheRegion:
             # and enter a new iteration of the outer while loop,
             # where we will try to acquire the lock again, calculate, and write the data to the cache.
             self.metrics.cache_herd_waited.labels(region_name=self.region_name).inc()
-            data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
+            data_from_cache = await self._check_if_data_appear_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
         return cast("R", data_from_cache.payload)
