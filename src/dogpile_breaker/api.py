@@ -100,9 +100,11 @@ class CacheRegion:
         :return:
         """
         if ttl_sec <= 0:
-            raise RuntimeError(f"ttl_sec must be greater than 0")
+            err_msg = "ttl_sec must be greater than 0"
+            raise ValueError(err_msg)
         if lock_period_sec <= 0:
-            raise ValueError("lock_period_sec greater than 0")
+            err_msg = "lock_period_sec must be greater than 0"
+            raise ValueError(err_msg)
 
         # use tmp cached awaitables to avoid thundering herd
         herd_leader = self.awaits.get(key, None)

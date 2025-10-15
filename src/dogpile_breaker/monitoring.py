@@ -57,7 +57,7 @@ class DogpileMetrics(metaclass=Singleton):
     """
 
     def __init__(self, enabled: bool) -> None:  # noqa:FBT001
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
         self._initialized = True
         if enabled and not PROMETHEUS_AVAILABLE:
