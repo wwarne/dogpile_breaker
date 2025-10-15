@@ -46,7 +46,7 @@ class CachingDecorator(Protocol):
     def __call__(self, func: Callable[P, Awaitable[R]]) -> CachedFuncWithMethods[P, R]: ...
 
 
-@dataclass
+@dataclass(slots=True)
 class CachedEntry:
     # What we actually store in cache is this class
     payload: ValuePayload
