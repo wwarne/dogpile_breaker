@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import functools
 import random
 import sys
@@ -196,15 +197,13 @@ class CacheRegion:
             ):
                 try:
                     result = await generate_func(*generate_func_args, **generate_func_kwargs)
-                except Exception as generation_exception:
+                except Exception:
                     self.metrics.generation_errors.labels(
                         region_name=self.region_name, func_name=generate_func.__name__
                     ).inc()
-                    try:
+                    with contextlib.suppress(Exception):
                         await self.backend_storage.unlock(key)
-                    except Exception:
-                        pass
-                    raise generation_exception
+                    raise
             # If we have a should_cache_fn function,
             # we use it to check whether the result should be saved in the cache
             # (for example, we might not want to do this under certain conditions
@@ -222,13 +221,11 @@ class CacheRegion:
                     )
             finally:
                 # always attempt to release lock
-                try:
+                # we already had result from cache
+                # and it's seem stupid to fail during unlock
+                # so i just ignore this error
+                with contextlib.suppress(Exception):
                     await self.backend_storage.unlock(key)
-                except Exception:
-                    # we already had result from cache
-                    # and it's seem stupid to fail during unlock
-                    # so i just ignore this error
-                    pass
             return result
         # We couldn't acquire the lock, meaning another process is updating the data.
         # In the meantime, we return outdated data to avoid making the clients wait.
@@ -285,15 +282,13 @@ class CacheRegion:
                     ).inc()
                     try:
                         result = await generate_func(*generate_func_args, **generate_func_kwargs)
-                    except Exception as generation_exception:
+                    except Exception:
                         self.metrics.generation_errors.labels(
                             region_name=self.region_name, func_name=generate_func.__name__
                         ).inc()
-                        try:
+                        with contextlib.suppress(Exception):
                             await self.backend_storage.unlock(key)
-                        except Exception:
-                            pass
-                        raise generation_exception
+                        raise
                 # If we have a should_cache_fn function,
                 # we use it to check whether the result should be saved in the cache
                 # (for example, we might not want to do this under certain conditions
@@ -309,10 +304,8 @@ class CacheRegion:
                             jitter_func=jitter_func,
                         )
                 finally:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self.backend_storage.unlock(key)
-                    except Exception:
-                        pass
                 return result
             # We wait timeout(lock_period_sec)
             # because if we just check whether anything has appeared in the cache,

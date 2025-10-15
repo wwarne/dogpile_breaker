@@ -9,6 +9,9 @@ from dogpile_breaker.monitoring import DogpileMetrics
 class MemoryBackendLRU:
     """
     In-memory LRU caching backend with TTL.
+
+    Does not provide distributed locking
+    (because it's only used inside one process)
     """
 
     def __init__(

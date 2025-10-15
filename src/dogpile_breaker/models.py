@@ -98,7 +98,13 @@ class StorageBackend(Protocol):
         """Deletes cached data from storage."""
 
     async def try_lock(self, key: str, lock_period_sec: int) -> bool:
-        """Returns True if successfully acquired lock, False otherwise. Should not wait for lock."""
+        """Returns True if successfully acquired lock, False otherwise. Should not wait for lock.
+        - Attempt to acquire an exclusive lock on the key.
+        - The lock MUST auto-expire after `lock_period_sec` to prevent deadlocks.
+        """
 
     async def unlock(self, key: str) -> None:
-        """Releases lock."""
+        """
+        Releases lock.
+        must be *idempotent*: calling unlock multiple times should be safe.
+        """

@@ -125,6 +125,10 @@ This allows functions to be decorated early in the application’s lifecycle.
 The only required components are a serializer and a deserializer for data.  
 The deserializer should raise `CantDeserializeError` if an error occurs.
 
+user-provided serializer/deserializer should be non-blocking or offloaded to executor if CPU-heavy 
+(e.g., pickle on large objects can block event loop). 
+Consider performing serialization via run_in_executor if payloads are big.
+
 **Runtime Configuration:**  
 Additional settings passed to `CacheRegion.configure()` are usually sourced from a configuration file.  
 These settings are often available only at runtime, resulting in a two-step configuration process.  
