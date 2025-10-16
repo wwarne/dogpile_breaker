@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import functools
 import random
 import sys
@@ -99,6 +100,13 @@ class CacheRegion:
         :param jitter_func: a function that randomly changes the ttl of a record to achieve more even distribution
         :return:
         """
+        if ttl_sec <= 0:
+            err_msg = "ttl_sec must be greater than 0"
+            raise ValueError(err_msg)
+        if lock_period_sec <= 0:
+            err_msg = "lock_period_sec must be greater than 0"
+            raise ValueError(err_msg)
+
         # use tmp cached awaitables to avoid thundering herd
         herd_leader = self.awaits.get(key, None)
         if herd_leader is None:
@@ -193,30 +201,38 @@ class CacheRegion:
                     self.metrics.generation_errors.labels(
                         region_name=self.region_name, func_name=generate_func.__name__
                     ).inc()
-                    await self.backend_storage.unlock(key)
+                    with contextlib.suppress(Exception):
+                        await self.backend_storage.unlock(key)
                     raise
             # If we have a should_cache_fn function,
             # we use it to check whether the result should be saved in the cache
             # (for example, we might not want to do this under certain conditions
             # or when specific parameters are present).
 
-            if not should_cache_fn or should_cache_fn(
-                source_args=generate_func_args, source_kwargs=generate_func_kwargs, result=result
-            ):
-                await self._set_cached_value_to_backend(
-                    key=key,
-                    value=result,
-                    ttl_sec=ttl_sec,
-                    jitter_func=jitter_func,
-                )
-            await self.backend_storage.unlock(key)
+            try:
+                if not should_cache_fn or should_cache_fn(
+                    source_args=generate_func_args, source_kwargs=generate_func_kwargs, result=result
+                ):
+                    await self._set_cached_value_to_backend(
+                        key=key,
+                        value=result,
+                        ttl_sec=ttl_sec,
+                        jitter_func=jitter_func,
+                    )
+            finally:
+                # always attempt to release lock
+                # we already had result from cache
+                # and it's seem stupid to fail during unlock
+                # so i just ignore this error
+                with contextlib.suppress(Exception):
+                    await self.backend_storage.unlock(key)
             return result
         # We couldn't acquire the lock, meaning another process is updating the data.
         # In the meantime, we return outdated data to avoid making the clients wait.
         self.metrics.cache_stale_served.labels(region_name=self.region_name).inc()
         return cast("R", data_from_cache.payload)
 
-    async def _check_if_data_apper_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
+    async def _check_if_data_appear_in_cache(self, key: str, lock_period_sec: int) -> CachedEntry | None:
         """
         This is a coroutine which checks if the data is apper in the cache in case the process refreshing the data
         is not the current one (it could be on another machine for example).
@@ -227,6 +243,8 @@ class CacheRegion:
         try:
             async with timeout(lock_period_sec):
                 while True:
+                    # if _get_from_backend raises an error - don't catch it here
+                    # because it makes no sense to retry or wait for failing data
                     data_from_cache = await self._get_from_backend(key=key)
                     if data_from_cache:
                         return data_from_cache
@@ -268,22 +286,26 @@ class CacheRegion:
                         self.metrics.generation_errors.labels(
                             region_name=self.region_name, func_name=generate_func.__name__
                         ).inc()
-                        await self.backend_storage.unlock(key)
+                        with contextlib.suppress(Exception):
+                            await self.backend_storage.unlock(key)
                         raise
                 # If we have a should_cache_fn function,
                 # we use it to check whether the result should be saved in the cache
                 # (for example, we might not want to do this under certain conditions
                 # or when specific parameters are present).
-                if not should_cache_fn or should_cache_fn(
-                    source_args=generate_func_args, source_kwargs=generate_func_kwargs, result=result
-                ):
-                    await self._set_cached_value_to_backend(
-                        key=key,
-                        value=result,
-                        ttl_sec=ttl_sec,
-                        jitter_func=jitter_func,
-                    )
-                await self.backend_storage.unlock(key)
+                try:
+                    if not should_cache_fn or should_cache_fn(
+                        source_args=generate_func_args, source_kwargs=generate_func_kwargs, result=result
+                    ):
+                        await self._set_cached_value_to_backend(
+                            key=key,
+                            value=result,
+                            ttl_sec=ttl_sec,
+                            jitter_func=jitter_func,
+                        )
+                finally:
+                    with contextlib.suppress(Exception):
+                        await self.backend_storage.unlock(key)
                 return result
             # We wait timeout(lock_period_sec)
             # because if we just check whether anything has appeared in the cache,
@@ -295,7 +317,7 @@ class CacheRegion:
             # and enter a new iteration of the outer while loop,
             # where we will try to acquire the lock again, calculate, and write the data to the cache.
             self.metrics.cache_herd_waited.labels(region_name=self.region_name).inc()
-            data_from_cache = await self._check_if_data_apper_in_cache(key, lock_period_sec)
+            data_from_cache = await self._check_if_data_appear_in_cache(key, lock_period_sec)
 
         # Finally, some coroutine has updated the data (it could be this one, or a parallel one).
         return cast("R", data_from_cache.payload)
@@ -322,6 +344,11 @@ class CacheRegion:
             payload=value,
             expiration_timestamp=time.time() + final_ttl,
         )
+        """
+        time.time actually can go backwards sometimes (during timezone change for example)
+        Can't use time.monotonic here because that value is only meaningful inside
+        the same process restart duration (monotonic epoch is not system clock).
+        """
         await self.backend_storage.set_serialized(
             key=key,
             value=new_cache_entry.to_bytes(serializer=self.serializer),

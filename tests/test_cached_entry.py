@@ -53,7 +53,7 @@ def test_from_bytes(valid_cached_entry: CachedEntry, valid_payload: dict[str, st
 
 
 def test_from_bytes_invalid_payload() -> None:
-    invalid_data = b'invalid|{"expiration_timestamp": 1738012598.794059}'
+    invalid_data = b'\x00\x00\x00\x07invalid{"expiration_timestamp": 1738012598.794059}'
     with pytest.raises(CantDeserializeError):
         CachedEntry.from_bytes(invalid_data, deserializer=example_deserializer)
 

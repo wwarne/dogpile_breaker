@@ -16,7 +16,8 @@ P = typing.ParamSpec("P")  # function parameters
 R = typing.TypeVar("R")  # function return value
 
 
-class CircuitState(Enum):
+# note - https://www.cosmicpython.com/blog/2020-10-27-i-hate-enums.html
+class CircuitState(str, Enum):
     CLOSED = "closed"  # Normal operation
     OPEN = "open"  # Failures threshold reached, using fallback only
     HALF_OPEN = "half_open"  # Testing if Redis is available again

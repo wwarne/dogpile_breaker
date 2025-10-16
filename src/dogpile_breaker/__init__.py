@@ -1,8 +1,7 @@
-__version__ = "0.20.0"
-
+from importlib.metadata import version
 
 from .api import CacheRegion
-from .backends.circut_breaker_fallback_backend import CircuitBreakerFallbackBackend
+from .backends.circuit_breaker_fallback_backend import CircuitBreakerFallbackBackend
 from .backends.memory_backend import MemoryBackendLRU
 from .backends.redis_backend import RedisSentinelBackend, RedisStorageBackend
 from .models import ShouldCacheFunc, StorageBackend
@@ -16,3 +15,4 @@ __all__ = [
     "ShouldCacheFunc",
     "StorageBackend",
 ]
+__version__ = version("dogpile_breaker")

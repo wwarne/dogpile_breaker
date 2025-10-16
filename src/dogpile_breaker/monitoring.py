@@ -57,6 +57,9 @@ class DogpileMetrics(metaclass=Singleton):
     """
 
     def __init__(self, enabled: bool) -> None:  # noqa:FBT001
+        if hasattr(self, "_initialized"):
+            return
+        self._initialized = True
         if enabled and not PROMETHEUS_AVAILABLE:
             err_msg = "Prometheus client is not installed. Install it with `pip install prometheus_client`"
             raise RuntimeError(err_msg)
