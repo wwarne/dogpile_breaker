@@ -72,10 +72,10 @@ class CachedEntry:
         data_len = int.from_bytes(data[:NUM_BYTES_FOR_LEN], "big")
         expected_min_length = NUM_BYTES_FOR_LEN + data_len
         if len(data) < expected_min_length:
-            raise CantDeserializeError(
-                f"Corrupted data: declared length {data_len} but only "
-                f"{len(data) - NUM_BYTES_FOR_LEN} bytes available"
+            err_msg = (
+                f"Corrupted data: declared length {data_len} but only {len(data) - NUM_BYTES_FOR_LEN} bytes available"
             )
+            raise CantDeserializeError(err_msg)
 
         bytes_payload = data[NUM_BYTES_FOR_LEN : NUM_BYTES_FOR_LEN + data_len]
         bytes_metadata = data[NUM_BYTES_FOR_LEN + data_len :]
