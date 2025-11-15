@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 from collections import OrderedDict
 
@@ -31,6 +32,12 @@ class MemoryBackendLRU:
         self.region_name: str
 
     async def initialize(self, metrics: DogpileMetrics, region_name: str) -> None:  # noqa:ARG002
+        if self._cleanup_task and not self._cleanup_task.done():
+            # if inititalize is called second time - cancell previous cleanup_task
+            self._cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._cleanup_task
+
         if self._check_interval:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
         self.region_name = region_name

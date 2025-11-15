@@ -303,6 +303,15 @@ It transitions between **CLOSED**, **OPEN**, and **HALF_OPEN** states to avoid o
 All storage methods (`get_serialized`, `set_serialized`, `delete`, `try_lock`, `unlock`) are overridden.
 Calls are routed through the private `_call_with_circuit` helper
 
+⚠️ Important note:
+
+While the breaker is in the `OPEN` state, all data is saved in the `fallback_storage` (usually MemoryBackend).
+After the `primary_storage` becomes available and the breaker switches to the `CLOSED` state,
+it will no longer use the `fallback_storage`, and the data stored there will not be propagated into the `primary_storage`.
+
+I have not yet decided whether such propagation would be beneficial.
+
+
 #### Usage example
 
 ```python
