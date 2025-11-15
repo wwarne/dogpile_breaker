@@ -113,7 +113,8 @@ class CacheRegion:
             # we use Future because you can `await` it multiple times
             # All calls to `get_or_create` with the same `key` would be groupped into one `singleflight`
             # only one request is actually going to be executed while others is going to wait for this Future() object
-            herd_leader = asyncio.Future()
+            loop = asyncio.get_running_loop()
+            herd_leader = loop.create_future()
             self.awaits[key] = herd_leader
 
             try:
@@ -131,8 +132,12 @@ class CacheRegion:
                     jitter_func=jitter_func,
                 )
                 herd_leader.set_result(result)
+            except asyncio.CancelledError:
+                herd_leader.cancel()
+                raise
             except Exception as e:
-                herd_leader.set_exception(e)
+                if not herd_leader.done():
+                    herd_leader.set_exception(e)
                 raise
             finally:
                 self.awaits.pop(key, None)
